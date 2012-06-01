@@ -21,6 +21,8 @@ package org.apache.james.mailbox.lucene.hbase;
 import java.io.IOException;
 
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.hbase.HBaseTestingUtility;
+import org.apache.hadoop.hbase.MiniHBaseCluster;
 import org.apache.hadoop.hbase.client.Delete;
 import org.apache.hadoop.hbase.client.HBaseAdmin;
 import org.apache.hadoop.hbase.client.HTable;
@@ -77,7 +79,6 @@ public final class HBaseClusterSingleton {
                 // add a shutdown hook for shuting down the minicluster.
                 Runtime.getRuntime().addShutdownHook(new Thread(new Runnable() {
 
-                    @Override
                     public void run() {
                         try {
                             hbaseCluster.shutdown();

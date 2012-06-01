@@ -1,5 +1,7 @@
 package org.apache.james.mailbox.lucene.hbase;
 
+import java.io.IOException;
+
 import org.junit.Test;
 
 public class HBaseMiniClusterTesting {
@@ -13,7 +15,7 @@ public class HBaseMiniClusterTesting {
     public enum HBaseNames {
         TABLE("index"), COLUMN_FAMILY("F");
 
-        private final String name;
+        public final String name;
 
         HBaseNames(String name) {
             this.name = name;
@@ -25,8 +27,9 @@ public class HBaseMiniClusterTesting {
     }
 
     @Test
-    public void insertDataIntoHBaseNodes() {
+    public void insertDataIntoHBaseNodes() throws IOException {
         HBaseNames.TABLE.getName();
-
+        CLUSTER.ensureTable(HBaseNames.TABLE.getName(),
+                new byte[][] { HBaseNames.COLUMN_FAMILY.getName() });
     }
 }
