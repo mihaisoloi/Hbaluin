@@ -17,6 +17,7 @@ package org.apache.james.test;
  * limitations under the License.
  */
 
+import java.io.FileNotFoundException;
 import java.io.IOException;
 
 import org.apache.lucene.store.Directory;
@@ -71,8 +72,13 @@ public class HBaseDirectory extends Directory {
     @Deprecated
     @Override
     public void touchFile(String name) throws IOException {
-        // TODO Auto-generated method stub
+        ensureOpen();
+        HBaseFile file = new HBaseFile();// TODO: somehow find the file in HBase
+        if (file == null) {
+            throw new FileNotFoundException(name);
+        }
 
+        file.setLastModified(System.currentTimeMillis());
     }
 
     /*

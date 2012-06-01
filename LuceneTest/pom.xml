@@ -5,17 +5,12 @@
 	<artifactId>LuceneTest</artifactId>
 	<version>0.0.1-SNAPSHOT</version>
 	<name>LuceneTest</name>
-	<description>Lucene in Action example applications</description>
 	<build>
 		<sourceDirectory>src</sourceDirectory>
 		<plugins>
 			<plugin>
 				<artifactId>maven-compiler-plugin</artifactId>
 				<version>2.3.2</version>
-				<configuration>
-					<source />
-					<target />
-				</configuration>
 			</plugin>
 		</plugins>
 	</build>
@@ -30,5 +25,28 @@
 		    <artifactId>junit</artifactId>
 		    <version>4.10</version>
 		</dependency>
+		<dependency>
+		    <groupId>org.apache.hbase</groupId>
+		    <artifactId>hbase</artifactId>
+		    <version>0.92.1</version>
+		</dependency>
+		<dependency>
+            <groupId>org.apache.hbase</groupId>
+            <artifactId>hbase</artifactId>
+            <type>test-jar</type>
+            <version>0.92.1</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.hadoop</groupId>
+            <artifactId>hadoop-test</artifactId>
+            <scope>test</scope>
+            <version>1.0.3</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.hadoop</groupId>
+            <artifactId>hadoop-core</artifactId>
+            <version>1.0.3</version>
+        </dependency>
 	</dependencies>
 </project>
