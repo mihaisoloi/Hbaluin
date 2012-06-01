@@ -160,4 +160,9 @@ public final class HBaseClusterSingleton {
             IOUtils.closeStream(table);
         }
     }
+
+    public static HBaseTestingUtility getHtu() {
+        return htu;
+    }
+
 }
