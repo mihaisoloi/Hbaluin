@@ -1,4 +1,4 @@
-package org.apache.james.test;
+package org.apache.james.mailbox.lucene.hbase;
 
 /**
  * Licensed to the Apache Software Foundation (ASF) under one or more

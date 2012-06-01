@@ -1,4 +1,4 @@
-package org.apache.james.test;
+package org.apache.james.mailbox.lucene.hbase;
 
 /**
  * Licensed to the Apache Software Foundation (ASF) under one or more
@@ -22,6 +22,7 @@ import static org.junit.Assert.assertEquals;
 
 import java.io.IOException;
 
+import org.apache.james.mailbox.lucene.hbase.HBaseDirectory;
 import org.apache.lucene.analysis.WhitespaceAnalyzer;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;

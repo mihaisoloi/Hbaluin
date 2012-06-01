@@ -1,4 +1,4 @@
-package org.apache.james.test;
+package org.apache.james.mailbox.lucene.hbase;
 
 import org.junit.Test;
 
