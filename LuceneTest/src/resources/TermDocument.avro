@@ -1,7 +1,7 @@
 {
-  "type" : "record",
-  "name" : "TermDocument",
   "namespace" : "com.navteq.lucene.hbase.document",
+  "name" : "TermDocument",
+  "type" : "record",
   "fields" : [ {
     "name" : "docFrequency",
     "type" : "int"
