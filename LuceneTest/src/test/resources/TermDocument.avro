@@ -1,0 +1,15 @@
+{
+  "type" : "record",
+  "name" : "TermDocument",
+  "namespace" : "com.navteq.lucene.hbase.document",
+  "fields" : [ {
+    "name" : "docFrequency",
+    "type" : "int"
+  }, {
+    "name" : "docPositions",
+    "type" : ["null", {
+      "type" : "array",
+      "items" : "int"
+   }]
+  } ]
+}

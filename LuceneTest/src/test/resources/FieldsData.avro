@@ -1,0 +1,22 @@
+{
+  "type" : "record",
+  "name" : "FieldsData",
+  "namespace" : "com.navteq.lucene.hbase.document",
+  "fields" : [ {
+    "name" : "fieldsArray",
+    "type" : {
+      "type" : "array",
+      "items" : {
+        "type" : "record",
+        "name" : "singleField",
+        "fields" : [ {
+          "name" : "binary",
+          "type" : "boolean"
+        }, {
+          "name" : "data",
+          "type" : [ "string", "bytes" ]
+        } ]
+      }
+    }
+  } ]
+}

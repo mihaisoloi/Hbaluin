@@ -30,7 +30,7 @@ public class HBaseMiniClusterTesting {
     }
 
     @After
-    public void after() {
+    public void tearDown() {
         IOUtils.closeStream(admin);
     }
 

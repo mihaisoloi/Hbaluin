@@ -1,0 +1,31 @@
+{
+  "type" : "record",
+  "name" : "TermDocumentFrequency",
+  "namespace" : "com.navteq.lucene.hbase.document",
+  "fields" : [ {
+    "name" : "docFrequency",
+    "type" : "int"
+  }, {
+    "name" : "docPositions",
+    "type" : ["null",{
+      "type" : "array",
+      "items" : "int"
+    }]
+  }, {
+    "name" : "docOffsets",
+    "type" : ["null",{
+      "type" : "array",
+      "items" : {
+        "type" : "record",
+        "name" : "TermsOffset",
+        "fields" : [ {
+          "name" : "startOffset",
+          "type" : "int"
+        }, {
+          "name" : "endOffset",
+          "type" : "int"
+        } ]
+      }
+    }]
+  } ]
+}
