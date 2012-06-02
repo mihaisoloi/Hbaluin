@@ -3,7 +3,12 @@
   "name": "FacebookSpecialUser",
   "type": "record",
   "fields": [
+    {"name": "type", "type": "string" },
     {"name": "user", "type": com.navteq.avro.FacebookUser },
-    {"name": "specialData", "type": "int"}
+    {"name": "extension", "type":
+            [com.navteq.avro.FacebookSpecialUserExtension1,
+            com.navteq.avro.FacebookSpecialUserExtension2,
+            com.navteq.avro.FacebookSpecialUserExtension3,
+            "null"]}
   ]
 }

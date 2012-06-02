@@ -22,6 +22,7 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.EOFException;
 import java.io.File;
+import java.io.IOException;
 
 import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericData;
@@ -42,28 +43,32 @@ import org.junit.Test;
  */
 public class AvroInheritanceTest {
 
-    private Schema fieldsDataSchema, termDocumentSchema,
-            termDocumentFrequencySchema, schema, subSchema;
+    private Schema ext1, ext2, ext3, specialUser, baseUser;
 
     /**
+     * 
+     * instantiating the schemas with the definitions, they must be done in
+     * order or the polymorphism won't work because they don't know about the
+     * classes above
+     * 
      * @throws java.lang.Exception
      */
     @Before
     public void setUp() throws Exception {
-        subSchema = AvroUtils.parseSchema(new File(
-                "resources/FacebookUser.avro"));
-        schema = AvroUtils.parseSchema(new File(
+        baseUser = AvroUtils
+                .parseSchema(new File("resources/FacebookUser.avro"));
+        ext1 = AvroUtils.parseSchema(new File(
+                "resources/FacebookSpecialUserExtension1.avro"));
+        ext2 = AvroUtils.parseSchema(new File(
+                "resources/FacebookSpecialUserExtension2.avro"));
+        ext3 = AvroUtils.parseSchema(new File(
+                "resources/FacebookSpecialUserExtension3.avro"));
+        specialUser = AvroUtils.parseSchema(new File(
                 "resources/FacebookSpecialUser.avro"));
-        fieldsDataSchema = AvroUtils.parseSchema(new File(
-                "resources/FieldsData.avro"));
-        termDocumentSchema = AvroUtils.parseSchema(new File(
-                "resources/TermDocument.avro"));
-        termDocumentFrequencySchema = AvroUtils.parseSchema(new File(
-                "resources/TermDocumentFrequency.avro"));
     }
 
     /**
-     * creates Schemas that have children
+     * creates Schemas that have children(i.e. polymorphism)
      * 
      * @throws Exception
      */
@@ -71,38 +76,25 @@ public class AvroInheritanceTest {
     public void inheritanceTest() throws Exception {
 
         ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
-        GenericDatumWriter<GenericRecord> writer = new GenericDatumWriter<GenericRecord>(
-                schema);
         Encoder encoder = EncoderFactory.get()
                 .binaryEncoder(outputStream, null);
-        GenericRecord child1 = new GenericData.Record(subSchema);
-        child1.put("name", new Utf8("Doctor Who"));
-        child1.put("num_likes", 1);
-        child1.put("num_photos", 0);
-        child1.put("num_groups", 423);
-        GenericRecord parent1 = new GenericData.Record(schema);
-        parent1.put("user", child1);
-        parent1.put("specialData", 1);
+        GenericDatumWriter<GenericRecord> writer = new GenericDatumWriter<GenericRecord>(
+                specialUser);
 
-        writer.write(parent1, encoder);
+        for (int i = 0; i < 4; i++)
+            populateUsers(writer, encoder, i);
 
-        GenericRecord child2 = new GenericData.Record(subSchema);
-        child2.put("name", new org.apache.avro.util.Utf8("Doctor WhoWho"));
-        child2.put("num_likes", 2);
-        child2.put("num_photos", 0);
-        child2.put("num_groups", 424);
-        GenericRecord parent2 = new GenericData.Record(schema);
-        parent2.put("user", child2);
-        parent2.put("specialData", 2);
-
-        writer.write(parent2, encoder);
+        System.out.println(AvroUtils.getSchema(specialUser.getFullName())
+                .toString(true));
 
         encoder.flush();
+
         ByteArrayInputStream inputStream = new ByteArrayInputStream(
                 outputStream.toByteArray());
         Decoder decoder = DecoderFactory.get().binaryDecoder(inputStream, null);
         GenericDatumReader<GenericRecord> reader = new GenericDatumReader<GenericRecord>(
-                schema);
+                specialUser);
+
         while (true) {
             try {
                 GenericRecord result = reader.read(null, decoder);
@@ -115,5 +107,35 @@ public class AvroInheritanceTest {
         }
         IoUtils.close(inputStream);
         IoUtils.close(outputStream);
+    }
+
+    public void populateUsers(GenericDatumWriter<GenericRecord> writer,
+            Encoder encoder, int x) throws IOException {
+
+        GenericRecord baseUserRecord = new GenericData.Record(baseUser);
+        baseUserRecord.put("name", new Utf8("Doctor Who^" + x));
+        baseUserRecord.put("num_likes", x);
+        baseUserRecord.put("num_photos", x);
+        baseUserRecord.put("num_groups", x);
+
+        GenericRecord specialUserRecord = new GenericData.Record(specialUser);
+        specialUserRecord.put("user", baseUserRecord);
+
+        Schema extendedSchema = x == 1 ? ext1 : x == 2 ? ext2 : ext3;
+        boolean write = x == 0 ? true : specialUser.getField("extension")
+                .schema().toString().contains(extendedSchema.getName());
+
+        if (x == 0)
+            specialUserRecord.put("type", "base");
+        else if (write) {// for extensions, removes duplication
+            GenericRecord extRecord = new GenericData.Record(extendedSchema);
+            extRecord.put("specialData" + x, x);
+
+            specialUserRecord.put("type", "extension" + x);
+            specialUserRecord.put("extension", extRecord);
+        }
+
+        if (write)
+            writer.write(specialUserRecord, encoder);
     }
 }
