@@ -6,14 +6,13 @@ import static org.apache.james.mailbox.lucene.hbase.HBaseNames.TABLE;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
-import java.io.IOException;
+import java.io.*;
 import java.util.NavigableMap;
 
 import org.apache.hadoop.hbase.ClusterStatus;
 import org.apache.hadoop.hbase.HTableDescriptor;
-import org.apache.hadoop.hbase.avro.AvroServer;
 import org.apache.hadoop.hbase.avro.AvroUtil;
-import org.apache.hadoop.hbase.avro.generated.AClusterStatus;
+import org.apache.hadoop.hbase.avro.generated.*;
 import org.apache.hadoop.hbase.client.Get;
 import org.apache.hadoop.hbase.client.HBaseAdmin;
 import org.apache.hadoop.hbase.client.HTable;
@@ -24,9 +23,12 @@ import org.apache.hadoop.io.IOUtils;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class HBaseMiniClusterTesting {
 
+    private static final Logger LOG = LoggerFactory.getLogger(HBaseMiniClusterTesting.class);
     private static final HBaseClusterSingleton CLUSTER = HBaseClusterSingleton
             .build();
     private static HBaseAdmin admin = null;
@@ -51,10 +53,9 @@ public class HBaseMiniClusterTesting {
 
     @Test
     public void insertValuesIntoColumns() throws IOException {
-        HTable htable = null;
-        htable = new HTable(CLUSTER.getConf(), TABLE.name);
+        HTable htable = new HTable(CLUSTER.getConf(), TABLE.name);
         Put put = new Put(toBytes("mihai"));
-        put.add(COLUMN_FAMILY.name, toBytes("varsta"), toBytes(26));
+        put.add(COLUMN_FAMILY.name, toBytes("varsta"), toBytes(27));
         put.add(COLUMN_FAMILY.name, toBytes("sex"), toBytes("male"));
         htable.put(put);
         htable.flushCommits();
@@ -63,19 +64,17 @@ public class HBaseMiniClusterTesting {
         Result result = htable.get(get);
         NavigableMap<byte[], byte[]> myMap = result
                 .getFamilyMap(COLUMN_FAMILY.name);
-        assertEquals(26, Bytes.toInt(myMap.get(toBytes("varsta"))));
+        assertEquals(27, Bytes.toInt(myMap.get(toBytes("varsta"))));
         assertEquals("male", Bytes.toString(myMap.get(toBytes("sex"))));
         htable.close();
     }
 
-    /*@Test
+    @Test
     public void testAvroHBaseIntegration() throws IOException {
-        AvroServer server = new AvroServer();
-        ClusterStatus cs = new ClusterStatus();
+        ClusterStatus cs = admin.getClusterStatus();
         assertEquals(1, cs.getServersSize());
         AClusterStatus acs = AvroUtil.csToACS(cs);
         assertEquals(cs.getServersSize(), acs.servers);
-
-    }*/
+    }
 
 }

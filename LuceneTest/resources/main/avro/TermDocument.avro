@@ -1,5 +1,5 @@
 {
-  "namespace" : "com.navteq.lucene.hbase.document",
+  "namespace" : "org.apache.james.mailbox.lucene.hbase.document",
   "name" : "TermDocument",
   "type" : "record",
   "fields" : [ {

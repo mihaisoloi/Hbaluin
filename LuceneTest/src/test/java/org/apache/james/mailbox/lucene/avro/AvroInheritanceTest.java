@@ -23,20 +23,25 @@ import java.io.ByteArrayOutputStream;
 import java.io.EOFException;
 import java.io.File;
 import java.io.IOException;
+import java.nio.ByteBuffer;
 
 import org.apache.avro.Schema;
-import org.apache.avro.generic.GenericData;
-import org.apache.avro.generic.GenericDatumReader;
-import org.apache.avro.generic.GenericDatumWriter;
-import org.apache.avro.generic.GenericRecord;
-import org.apache.avro.io.Decoder;
-import org.apache.avro.io.DecoderFactory;
-import org.apache.avro.io.Encoder;
-import org.apache.avro.io.EncoderFactory;
+import org.apache.avro.generic.*;
+import org.apache.avro.io.*;
+import org.apache.avro.specific.SpecificDatumReader;
+import org.apache.avro.specific.SpecificDatumWriter;
 import org.apache.avro.util.Utf8;
 import org.apache.ftpserver.util.IoUtils;
+import org.apache.hadoop.hbase.avro.generated.AColumnValue;
+import org.apache.hadoop.hbase.avro.generated.AGet;
+import org.apache.hadoop.hbase.avro.generated.APut;
+import org.apache.hadoop.hbase.client.HTable;
 import org.junit.Before;
 import org.junit.Test;
+
+import static org.apache.hadoop.hbase.util.Bytes.toBytes;
+import static org.apache.james.mailbox.lucene.hbase.HBaseNames.COLUMN_FAMILY;
+import static org.apache.james.mailbox.lucene.hbase.HBaseNames.TABLE;
 
 /**
  * @author msoloi
@@ -56,15 +61,15 @@ public class AvroInheritanceTest {
     @Before
     public void setUp() throws Exception {
         baseUser = AvroUtils
-                .parseSchema(new File("resources/FacebookUser.avro"));
+                .parseSchema(new File("LuceneTest/resources/test/avro/FacebookUser.avro"));
         ext1 = AvroUtils.parseSchema(new File(
-                "resources/FacebookSpecialUserExtension1.avro"));
+                "LuceneTest/resources/test/avro/FacebookSpecialUserExtension1.avro"));
         ext2 = AvroUtils.parseSchema(new File(
-                "resources/FacebookSpecialUserExtension2.avro"));
+                "LuceneTest/resources/test/avro/FacebookSpecialUserExtension2.avro"));
         ext3 = AvroUtils.parseSchema(new File(
-                "resources/FacebookSpecialUserExtension3.avro"));
+                "LuceneTest/resources/test/avro/FacebookSpecialUserExtension3.avro"));
         specialUser = AvroUtils.parseSchema(new File(
-                "resources/FacebookSpecialUser.avro"));
+                "LuceneTest/resources/test/avro/FacebookSpecialUser.avro"));
     }
 
     /**
@@ -122,7 +127,7 @@ public class AvroInheritanceTest {
         specialUserRecord.put("user", baseUserRecord);
 
         Schema extendedSchema = x == 1 ? ext1 : x == 2 ? ext2 : ext3;
-        boolean write = x == 0 ? true : specialUser.getField("extension")
+        boolean write = x == 0 || specialUser.getField("extension")
                 .schema().toString().contains(extendedSchema.getName());
 
         if (x == 0)
@@ -137,5 +142,50 @@ public class AvroInheritanceTest {
 
         if (write)
             writer.write(specialUserRecord, encoder);
+    }
+
+
+    @Test
+    public void insertAvroPut() throws IOException{
+
+        //creating an AvroPut
+        AColumnValue columnValue = new AColumnValue();
+        columnValue.family = ByteBuffer.wrap(COLUMN_FAMILY.name);
+        columnValue.qualifier = ByteBuffer.wrap(toBytes("varsta"));
+        columnValue.value = ByteBuffer.wrap(toBytes(27));
+
+        Schema columnValueSchema = Schema.createArray(AColumnValue.SCHEMA$);
+        GenericArray<AColumnValue> columnValues = new GenericData.Array<AColumnValue>(5, columnValueSchema);
+        columnValues.add(columnValue);
+
+        APut put = new APut();
+        put.row = ByteBuffer.wrap(toBytes("mihai"));
+        put.columnValues = columnValues;
+
+        //writing the put to the output stream
+        ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+        BinaryEncoder binaryEncoder = EncoderFactory.get().binaryEncoder(byteArrayOutputStream,null);
+        SpecificDatumWriter<APut> writer = new SpecificDatumWriter<APut>(APut.SCHEMA$);
+        writer.write(put,binaryEncoder);
+        binaryEncoder.flush();
+
+        byte[] bytes=byteArrayOutputStream.toByteArray();
+
+        ByteArrayInputStream byteArrayInputStream = new ByteArrayInputStream(bytes);
+        BinaryDecoder binaryDecoder = DecoderFactory.get().binaryDecoder(byteArrayInputStream,null);
+        SpecificDatumReader<AGet> reader = new SpecificDatumReader<AGet>(AGet.SCHEMA$);
+
+        while (true) {
+            try {
+                AGet get = reader.read(null, binaryDecoder);
+                System.out.println(get.row.toString());
+            } catch (EOFException eof) {
+                break;
+            } catch (Exception ex) {
+                ex.printStackTrace();
+            }
+        }
+
+//        assertEquals(put.row,get.row);
     }
 }

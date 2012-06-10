@@ -51,7 +51,7 @@ public class AvroUtils {
      * resolving is necessary to see if replacement of schema objects is
      * necessary in current schema
      * 
-     * @param sc
+     * @param result
      * @return
      */
     public static String resolveSchema(String result) {
