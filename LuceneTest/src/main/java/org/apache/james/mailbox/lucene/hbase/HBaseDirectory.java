@@ -1,133 +1,216 @@
+/******************************************************************************
+ * Licensed to the Apache Software Foundation (ASF) under one or more         *
+ * contributor license agreements. See the NOTICE file distributed with       *
+ * this work for additional information regarding copyright ownership.        *
+ * The ASF licenses this file to You under the Apache License, Version 2.0    *
+ * (the "License"); you may not use this file except in compliance with       *
+ * the License. You may obtain a copy of the License at                       *
+ *                                                                            *
+ * http://www.apache.org/licenses/LICENSE-2.0                                 *
+ *                                                                            *
+ * Unless required by applicable law or agreed to in writing, software        *
+ * distributed under the License is distributed on an "AS IS" BASIS,          *
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.   *
+ * See the License for the specific language governing permissions and        *
+ * limitations under the License.                                             *
+ ******************************************************************************/
+
 package org.apache.james.mailbox.lucene.hbase;
 
-/**
- * Licensed to the Apache Software Foundation (ASF) under one or more
- * contributor license agreements. See the NOTICE file distributed with
- * this work for additional information regarding copyright ownership.
- * The ASF licenses this file to You under the Apache License, Version 2.0
- * (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * 
- * http://www.apache.org/licenses/LICENSE-2.0
- * 
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
-import java.io.FileNotFoundException;
-import java.io.IOException;
-
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.hbase.HColumnDescriptor;
+import org.apache.hadoop.hbase.HTableDescriptor;
+import org.apache.hadoop.hbase.MasterNotRunningException;
+import org.apache.hadoop.hbase.ZooKeeperConnectionException;
+import org.apache.hadoop.hbase.client.*;
+import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.IndexInput;
 import org.apache.lucene.store.IndexOutput;
+import org.apache.lucene.util.ThreadInterruptedException;
 
-/**
- *
- */
-public class HBaseDirectory extends Directory {
+import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.io.Serializable;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 
-    /**
-     * 
-     */
-    public HBaseDirectory() {
-        // TODO Auto-generated constructor stub
+import static org.apache.hadoop.hbase.util.Bytes.toBytes;
+
+public class HBaseDirectory extends Directory implements Serializable {
+
+
+    private static final Log LOG = LogFactory.getLog(HBaseDirectory.class);
+
+    //keys are the segment_name and lucene inverted index(i.e. contents of the segment file)
+    protected final Map<String, HBaseFile> hBaseFileMap = new ConcurrentHashMap<String, HBaseFile>();
+
+    protected final AtomicLong sizeInBytes = new AtomicLong();
+
+    private static Configuration config;
+    private static HBaseAdmin admin = null;
+    private static HTable hTable = null;
+    private static final String SEGMENTS = "segments";
+
+    public HBaseDirectory(Configuration config) {
+        this.config = config;
+        try {
+            admin = new HBaseAdmin(config);
+        } catch (MasterNotRunningException e) {
+            e.printStackTrace();
+        } catch (ZooKeeperConnectionException e) {
+            e.printStackTrace();
+        }
+
+        try {
+            if (!admin.tableExists(SEGMENTS)) {
+                HTableDescriptor tableDescriptor = new HTableDescriptor(SEGMENTS);
+                HColumnDescriptor columnDescriptor = new HColumnDescriptor("T");
+                tableDescriptor.addFamily(columnDescriptor);
+                admin.createTable(tableDescriptor);
+                hTable = new HTable(config, SEGMENTS);
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
     }
 
-    /*
-     * (non-Javadoc)
-     * @see org.apache.lucene.store.Directory#listAll()
-     */
     @Override
     public String[] listAll() throws IOException {
-        // TODO Auto-generated method stub
-        return null;
+        ensureOpen();
+        return hBaseFileMap.keySet().toArray(new String[0]);
     }
 
-    /*
-     * (non-Javadoc)
-     * @see org.apache.lucene.store.Directory#fileExists(java.lang.String)
+    /**
+     * looking for a certain segment file
+     *
+     * @param name
+     * @return
+     * @throws IOException
      */
     @Override
     public boolean fileExists(String name) throws IOException {
-        // TODO Auto-generated method stub
-        return false;
+        ensureOpen();
+        return hBaseFileMap.containsKey(name);
     }
 
-    /*
-     * {@inheritDoc}
+    /**
+     * Returns the time the named file was last modified.
+     *
+     * @throws IOException if the file does not exist
      */
-    @Deprecated
     @Override
     public long fileModified(String name) throws IOException {
-        // TODO Auto-generated method stub
-        return 0;
+        ensureOpen();
+        HBaseFile hBaseFile = hBaseFileMap.get(name);
+        if (hBaseFile == null) {
+            throw new FileNotFoundException(name);
+        }
+        return hBaseFile.getLastModified();
     }
 
-    /*
-     * {@inheritDoc}
+    /**
+     * Set the modified time of an existing file to now.
+     *
+     * @throws IOException if the file does not exist
+     * @deprecated Lucene never uses this API; it will be
+     *             removed in 4.0.
      */
-    @Deprecated
     @Override
+    @Deprecated
     public void touchFile(String name) throws IOException {
         ensureOpen();
-        HBaseFile file = new HBaseFile();// TODO: somehow find the file in HBase
+        HBaseFile file = hBaseFileMap.get(name);
         if (file == null) {
             throw new FileNotFoundException(name);
         }
 
-        file.setLastModified(System.currentTimeMillis());
+        long ts2, ts1 = System.currentTimeMillis();
+        do {
+            try {
+                Thread.sleep(0, 1);
+            } catch (InterruptedException ie) {
+                throw new ThreadInterruptedException(ie);
+            }
+            ts2 = System.currentTimeMillis();
+        } while (ts1 == ts2);
+
+        file.setLastModified(ts2);
     }
 
-    /*
-     * {@inheritDoc}
+    /**
+     * Removes an existing file in the directory.
+     *
+     * @throws IOException if the file does not exist
      */
     @Override
     public void deleteFile(String name) throws IOException {
-        // TODO Auto-generated method stub
-
+        ensureOpen();
+        HBaseFile hBaseFile = hBaseFileMap.remove(name);
+        if (hBaseFile != null) {
+            hBaseFile.directory = null;
+            sizeInBytes.addAndGet(hBaseFile.sizeInBytes);
+        } else {
+            throw new FileNotFoundException(name);
+        }
     }
 
-    /*
-     * (non-Javadoc)
-     * @see org.apache.lucene.store.Directory#fileLength(java.lang.String)
+    /**
+     * Returns the length in bytes of a file in the directory.
+     *
+     * @throws IOException if the file does not exist
      */
     @Override
-    public long fileLength(String name) throws IOException {
-        // TODO Auto-generated method stub
-        return 0;
+    public final long fileLength(String name) throws IOException {
+        ensureOpen();
+        HBaseFile file = hBaseFileMap.get(name);
+        if (file == null) {
+            throw new FileNotFoundException(name);
+        }
+        return file.getLength();
     }
 
-    /*
-     * (non-Javadoc)
-     * @see org.apache.lucene.store.Directory#createOutput(java.lang.String)
+    /**
+     * Creates a new, empty file in the directory with the given name. Returns a stream writing this file.
      */
     @Override
     public IndexOutput createOutput(String name) throws IOException {
-        // TODO Auto-generated method stub
-        return null;
+        ensureOpen();
+        HBaseFile hBaseFile = new HBaseFile();
+        //deleting the existing file with the same name
+        HBaseFile existing = hBaseFileMap.remove(name);
+        if (existing != null) {
+            sizeInBytes.addAndGet(-existing.sizeInBytes);
+            existing.directory = null;
+        }
+        hBaseFileMap.put(name, hBaseFile);
+
+
+        Put put = new Put(toBytes(name));
+        return new HBaseIndexOutput(hBaseFile,hTable, put);
     }
 
-    /*
-     * (non-Javadoc)
-     * @see org.apache.lucene.store.Directory#openInput(java.lang.String)
+    /**
+     * Returns a stream reading an existing file.
      */
     @Override
     public IndexInput openInput(String name) throws IOException {
-        // TODO Auto-generated method stub
-        return null;
+        ensureOpen();
+            Get get = new Get(toBytes(name));
+            get.addFamily(Bytes.toBytes("segments"));
+            get.addColumn(Bytes.toBytes("t"),Bytes.toBytes("avro"));
+            return new HBaseIndexInput(name, hTable, get);
     }
 
-    /*
-     * (non-Javadoc)
-     * @see org.apache.lucene.store.Directory#close()
+    /**
+     * Closes the store to future operations, releasing associated memory.
      */
     @Override
-    public void close() throws IOException {
-        // TODO Auto-generated method stub
-
+    public void close() {
+        isOpen = false;
+        hBaseFileMap.clear();
     }
-
 }

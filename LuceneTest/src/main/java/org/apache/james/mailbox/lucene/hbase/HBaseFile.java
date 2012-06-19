@@ -1,75 +1,95 @@
-/****************************************************************
- * Licensed to the Apache Software Foundation (ASF) under one *
- * or more contributor license agreements. See the NOTICE file *
- * distributed with this work for additional information *
- * regarding copyright ownership. The ASF licenses this file *
- * to you under the Apache License, Version 2.0 (the *
- * "License"); you may not use this file except in compliance *
- * with the License. You may obtain a copy of the License at *
- * *
- * http://www.apache.org/licenses/LICENSE-2.0 *
- * *
- * Unless required by applicable law or agreed to in writing, *
- * software distributed under the License is distributed on an *
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY *
- * KIND, either express or implied. See the License for the *
- * specific language governing permissions and limitations *
- * under the License. *
- ****************************************************************/
+/******************************************************************************
+ * Licensed to the Apache Software Foundation (ASF) under one or more         *
+ * contributor license agreements. See the NOTICE file distributed with       *
+ * this work for additional information regarding copyright ownership.        *
+ * The ASF licenses this file to You under the Apache License, Version 2.0    *
+ * (the "License"); you may not use this file except in compliance with       *
+ * the License. You may obtain a copy of the License at                       *
+ *                                                                            *
+ * http://www.apache.org/licenses/LICENSE-2.0                                 *
+ *                                                                            *
+ * Unless required by applicable law or agreed to in writing, software        *
+ * distributed under the License is distributed on an "AS IS" BASIS,          *
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.   *
+ * See the License for the specific language governing permissions and        *
+ * limitations under the License.                                             *
+ ******************************************************************************/
+
 package org.apache.james.mailbox.lucene.hbase;
 
-import java.io.Serializable;
 import java.util.ArrayList;
 
-/**
- * @author msoloi
- * 
- */
-public class HBaseFile implements Serializable {
+public class HBaseFile {
 
-    private static final long serialVersionUID = 1l;
-
+    //this must house the bytes form the Avro serialization
     protected ArrayList<byte[]> buffers = new ArrayList<byte[]>();
     long length;
     HBaseDirectory directory;
     protected long sizeInBytes;
 
-    /**
-     * This is publicly modifiable via Directory.touchFile(), so direct access
-     * is not supported
-     * 
-     * @deprecated
-     */
-    @Deprecated
+    // This is publicly modifiable via Directory.touchFile(), so direct access not supported
     private long lastModified = System.currentTimeMillis();
 
-    /**
-     * 
-     */
-    public HBaseFile(HBaseDirectory directory) {
+    // File used as buffer, in no HBaseDirectory
+    public HBaseFile() {
+    }
+
+    HBaseFile(HBaseDirectory directory) {
         this.directory = directory;
     }
 
-    /**
-     * for buffering
-     */
-    public HBaseFile() {
-        super();
+    // For non-stream access from thread that might be concurrent with writing
+    public synchronized long getLength() {
+        return length;
     }
 
-    /**
-     * @return the lastModified
-     */
-    public long getLastModified() {
+    protected synchronized void setLength(long length) {
+        this.length = length;
+    }
+
+    // For non-stream access from thread that might be concurrent with writing
+    public synchronized long getLastModified() {
         return lastModified;
     }
 
-    /**
-     * @param lastModified
-     *            the lastModified to set
-     */
-    public void setLastModified(long lastModified) {
+    protected synchronized void setLastModified(long lastModified) {
         this.lastModified = lastModified;
+    }
+
+    protected final byte[] addBuffer(int size) {
+        byte[] buffer = newBuffer(size);
+        synchronized (this) {
+            buffers.add(buffer);
+            sizeInBytes += size;
+        }
+
+        if (directory != null) {
+            directory.sizeInBytes.getAndAdd(size);
+        }
+        return buffer;
+    }
+
+    protected final synchronized byte[] getBuffer(int index) {
+        return buffers.get(index);
+    }
+
+    protected final synchronized int numBuffers() {
+        return buffers.size();
+    }
+
+    /**
+     * Expert: allocate a new buffer.
+     * Subclasses can allocate differently.
+     *
+     * @param size size of allocated buffer.
+     * @return allocated buffer.
+     */
+    protected byte[] newBuffer(int size) {
+        return new byte[size];
+    }
+
+    public synchronized long getSizeInBytes() {
+        return sizeInBytes;
     }
 
 }
