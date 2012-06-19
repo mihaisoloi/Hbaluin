@@ -7,9 +7,9 @@ package org.apache.james.mailbox.lucene.hbase;
  * The ASF licenses this file to You under the Apache License, Version 2.0
  * (the "License"); you may not use this file except in compliance with
  * the License. You may obtain a copy of the License at
- * 
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -17,28 +17,42 @@ package org.apache.james.mailbox.lucene.hbase;
  * limitations under the License.
  */
 
-import static org.apache.lucene.util.Version.LUCENE_36;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.lucene.analysis.standard.StandardAnalyzer;
+import org.apache.lucene.document.Document;
+import org.apache.lucene.document.Field;
+import org.apache.lucene.index.*;
+import org.apache.lucene.store.FSDirectory;
 
 import java.io.File;
 import java.io.FileFilter;
 import java.io.FileReader;
 import java.io.IOException;
 
-import org.apache.lucene.analysis.standard.StandardAnalyzer;
-import org.apache.lucene.document.Document;
-import org.apache.lucene.document.Field;
-import org.apache.lucene.index.IndexWriter;
-import org.apache.lucene.index.IndexWriterConfig;
-import org.apache.lucene.store.FSDirectory;
+import static org.apache.lucene.util.Version.LUCENE_36;
 
 public class Indexer {
     private final IndexWriter writer;
 
     public Indexer(String indexDir) throws IOException {
-        final FSDirectory dir = FSDirectory.open(new File(indexDir));
-        final IndexWriterConfig config = new IndexWriterConfig(LUCENE_36,
+        writer = new IndexWriter(FSDirectory.open(new File(indexDir)), createConfig(true));
+    }
+
+    public Indexer(Configuration conf) throws IOException {
+        writer = new IndexWriter(new HBaseDirectory(conf), createConfig(true));
+    }
+
+    private IndexWriterConfig createConfig(boolean defaultMerge) {
+        IndexWriterConfig config = new IndexWriterConfig(LUCENE_36,
                 new StandardAnalyzer(LUCENE_36));
-        writer = new IndexWriter(dir, config);
+        //the default merge policy for LUCENE_32 and above is TieredMergePolicy
+        //which already has useCompoundFile set to true
+        if (defaultMerge)
+            ((TieredMergePolicy) config.getMergePolicy()).setNoCFSRatio(1.0);
+        else
+            config.setMergePolicy(NoMergePolicy.COMPOUND_FILES);
+
+        return config;
     }
 
     public static void main(String[] args) throws IOException {
@@ -46,7 +60,9 @@ public class Indexer {
             throw new IllegalArgumentException("Usage: java "
                     + Indexer.class.getName() + " <index dir> <data dir>");
         }
+        //where the index is going to be written to
         String indexDir = args[0];
+        //where the files to be indexed are located
         String dataDir = args[1];
 
         long start = System.currentTimeMillis();
@@ -62,7 +78,7 @@ public class Indexer {
                 + (end - start) + "milliseconds");
     }
 
-    private int index(String dataDir, TextFilesFilter filter)
+    public int index(String dataDir, TextFilesFilter filter)
             throws IOException {
         File[] files = new File(dataDir).listFiles();
         for (File f : files)
@@ -72,7 +88,7 @@ public class Indexer {
         return writer.numDocs();
     }
 
-    private void close() throws IOException {
+    public void close() throws IOException {
         writer.close();
     }
 
@@ -92,7 +108,7 @@ public class Indexer {
         writer.addDocument(doc);
     }
 
-    private static class TextFilesFilter implements FileFilter {
+    public static class TextFilesFilter implements FileFilter {
 
         public boolean accept(File pathname) {
             return pathname.getName().toLowerCase().endsWith(".txt");

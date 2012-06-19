@@ -23,25 +23,16 @@ import java.io.ByteArrayOutputStream;
 import java.io.EOFException;
 import java.io.File;
 import java.io.IOException;
-import java.nio.ByteBuffer;
 
 import org.apache.avro.Schema;
 import org.apache.avro.generic.*;
 import org.apache.avro.io.*;
-import org.apache.avro.specific.SpecificDatumReader;
-import org.apache.avro.specific.SpecificDatumWriter;
 import org.apache.avro.util.Utf8;
 import org.apache.ftpserver.util.IoUtils;
-import org.apache.hadoop.hbase.avro.generated.AColumnValue;
-import org.apache.hadoop.hbase.avro.generated.AGet;
-import org.apache.hadoop.hbase.avro.generated.APut;
-import org.apache.hadoop.hbase.client.HTable;
 import org.junit.Before;
 import org.junit.Test;
 
 import static org.apache.hadoop.hbase.util.Bytes.toBytes;
-import static org.apache.james.mailbox.lucene.hbase.HBaseNames.COLUMN_FAMILY;
-import static org.apache.james.mailbox.lucene.hbase.HBaseNames.TABLE;
 
 /**
  * @author msoloi
@@ -145,7 +136,7 @@ public class AvroInheritanceTest {
     }
 
 
-    @Test
+    /*@Test
     public void insertAvroPut() throws IOException{
 
         //creating an AvroPut
@@ -187,5 +178,5 @@ public class AvroInheritanceTest {
         }
 
 //        assertEquals(put.row,get.row);
-    }
+    }*/
 }

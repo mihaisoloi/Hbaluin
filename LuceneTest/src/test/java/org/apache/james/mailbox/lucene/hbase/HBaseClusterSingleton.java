@@ -1,38 +1,31 @@
-/****************************************************************
- * Licensed to the Apache Software Foundation (ASF) under one *
- * or more contributor license agreements. See the NOTICE file *
- * distributed with this work for additional information *
- * regarding copyright ownership. The ASF licenses this file *
- * to you under the Apache License, Version 2.0 (the *
- * "License"); you may not use this file except in compliance *
- * with the License. You may obtain a copy of the License at *
- * *
- * http://www.apache.org/licenses/LICENSE-2.0 *
- * *
- * Unless required by applicable law or agreed to in writing, *
- * software distributed under the License is distributed on an *
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY *
- * KIND, either express or implied. See the License for the *
- * specific language governing permissions and limitations *
- * under the License. *
- ****************************************************************/
+/******************************************************************************
+ * Licensed to the Apache Software Foundation (ASF) under one or more         *
+ * contributor license agreements. See the NOTICE file distributed with       *
+ * this work for additional information regarding copyright ownership.        *
+ * The ASF licenses this file to You under the Apache License, Version 2.0    *
+ * (the "License"); you may not use this file except in compliance with       *
+ * the License. You may obtain a copy of the License at                       *
+ *                                                                            *
+ * http://www.apache.org/licenses/LICENSE-2.0                                 *
+ *                                                                            *
+ * Unless required by applicable law or agreed to in writing, software        *
+ * distributed under the License is distributed on an "AS IS" BASIS,          *
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.   *
+ * See the License for the specific language governing permissions and        *
+ * limitations under the License.                                             *
+ ******************************************************************************/
 package org.apache.james.mailbox.lucene.hbase;
-
-import java.io.IOException;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.HBaseTestingUtility;
 import org.apache.hadoop.hbase.MiniHBaseCluster;
-import org.apache.hadoop.hbase.client.Delete;
-import org.apache.hadoop.hbase.client.HBaseAdmin;
-import org.apache.hadoop.hbase.client.HTable;
-import org.apache.hadoop.hbase.client.Result;
-import org.apache.hadoop.hbase.client.ResultScanner;
-import org.apache.hadoop.hbase.client.Scan;
+import org.apache.hadoop.hbase.client.*;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.io.IOUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.io.IOException;
 
 /**
  * Class that will creates a single instance of HBase MiniCluster.
@@ -48,7 +41,7 @@ public final class HBaseClusterSingleton {
 
     /**
      * Builds a MiniCluster instance.
-     * 
+     *
      * @return the {@link HBaseClusterSingleton} instance
      * @throws RuntimeException
      */
@@ -94,7 +87,7 @@ public final class HBaseClusterSingleton {
 
     /**
      * Return a configuration for the runnning MiniCluster.
-     * 
+     *
      * @return
      */
     public Configuration getConf() {
@@ -103,11 +96,9 @@ public final class HBaseClusterSingleton {
 
     /**
      * Creates a table with the specified column families.
-     * 
-     * @param tableName
-     *            the table name
-     * @param columnFamilies
-     *            the colum families
+     *
+     * @param tableName      the table name
+     * @param columnFamilies the colum families
      * @throws IOException
      */
     public void ensureTable(String tableName, String... columnFamilies)
@@ -121,11 +112,9 @@ public final class HBaseClusterSingleton {
 
     /**
      * Creates a table with the specified column families.
-     * 
-     * @param tableName
-     *            the table name
-     * @param cfs
-     *            the column families
+     *
+     * @param tableName the table name
+     * @param cfs       the column families
      * @throws IOException
      */
     public void ensureTable(byte[] tableName, byte[][] cfs) throws IOException {
@@ -137,7 +126,7 @@ public final class HBaseClusterSingleton {
 
     /**
      * Delete all rows from specified table.
-     * 
+     *
      * @param tableName
      */
     public void clearTable(String tableName) {

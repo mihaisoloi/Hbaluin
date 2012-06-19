@@ -17,13 +17,15 @@
 
 package org.apache.james.mailbox.lucene.hbase;
 
+import java.io.Serializable;
 import java.util.ArrayList;
 
-public class HBaseFile {
+public class HBaseFile implements Serializable {
+
+    private static final long serialVersionUID = 1l;
 
     //this must house the bytes form the Avro serialization
     protected ArrayList<byte[]> buffers = new ArrayList<byte[]>();
-    long length;
     HBaseDirectory directory;
     protected long sizeInBytes;
 
@@ -40,11 +42,7 @@ public class HBaseFile {
 
     // For non-stream access from thread that might be concurrent with writing
     public synchronized long getLength() {
-        return length;
-    }
-
-    protected synchronized void setLength(long length) {
-        this.length = length;
+        return buffers.size();
     }
 
     // For non-stream access from thread that might be concurrent with writing

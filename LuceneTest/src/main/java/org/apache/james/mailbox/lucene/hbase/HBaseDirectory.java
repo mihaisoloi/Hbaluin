@@ -17,46 +17,58 @@
 
 package org.apache.james.mailbox.lucene.hbase;
 
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.HColumnDescriptor;
 import org.apache.hadoop.hbase.HTableDescriptor;
 import org.apache.hadoop.hbase.MasterNotRunningException;
 import org.apache.hadoop.hbase.ZooKeeperConnectionException;
-import org.apache.hadoop.hbase.client.*;
+import org.apache.hadoop.hbase.client.Get;
+import org.apache.hadoop.hbase.client.HBaseAdmin;
+import org.apache.hadoop.hbase.client.HTable;
+import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.util.Bytes;
-import org.apache.lucene.store.Directory;
-import org.apache.lucene.store.IndexInput;
-import org.apache.lucene.store.IndexOutput;
+import org.apache.lucene.store.*;
 import org.apache.lucene.util.ThreadInterruptedException;
 
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.Serializable;
+import java.util.Arrays;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static org.apache.hadoop.hbase.util.Bytes.toBytes;
+import static org.apache.james.mailbox.lucene.hbase.HBaseNames.*;
 
 public class HBaseDirectory extends Directory implements Serializable {
 
 
-    private static final Log LOG = LogFactory.getLog(HBaseDirectory.class);
+//    private static final Log LOG = LogFactory.getLog(HBaseDirectory.class);
 
     //keys are the segment_name and lucene inverted index(i.e. contents of the segment file)
     protected final Map<String, HBaseFile> hBaseFileMap = new ConcurrentHashMap<String, HBaseFile>();
 
     protected final AtomicLong sizeInBytes = new AtomicLong();
 
-    private static Configuration config;
     private static HBaseAdmin admin = null;
     private static HTable hTable = null;
-    private static final String SEGMENTS = "segments";
+
+    /**
+     * Constructs an empty {@link Directory}.
+     */
+    public HBaseDirectory() {
+        try {
+            //temporary single instance LockFactory
+            setLockFactory(new SingleInstanceLockFactory());
+        } catch (IOException e) {
+            // Cannot happen
+        }
+    }
 
     public HBaseDirectory(Configuration config) {
-        this.config = config;
+        this();
+
         try {
             admin = new HBaseAdmin(config);
         } catch (MasterNotRunningException e) {
@@ -66,12 +78,12 @@ public class HBaseDirectory extends Directory implements Serializable {
         }
 
         try {
-            if (!admin.tableExists(SEGMENTS)) {
-                HTableDescriptor tableDescriptor = new HTableDescriptor(SEGMENTS);
-                HColumnDescriptor columnDescriptor = new HColumnDescriptor("T");
+            if (!admin.tableExists(SEGMENTS.name)) {
+                HTableDescriptor tableDescriptor = new HTableDescriptor(SEGMENTS.name);
+                HColumnDescriptor columnDescriptor = new HColumnDescriptor(TERM_DOCUMENT_CF.name);
                 tableDescriptor.addFamily(columnDescriptor);
                 admin.createTable(tableDescriptor);
-                hTable = new HTable(config, SEGMENTS);
+                hTable = new HTable(config, SEGMENTS.name);
             }
         } catch (IOException e) {
             e.printStackTrace();
@@ -103,6 +115,7 @@ public class HBaseDirectory extends Directory implements Serializable {
      * @throws IOException if the file does not exist
      */
     @Override
+    @Deprecated
     public long fileModified(String name) throws IOException {
         ensureOpen();
         HBaseFile hBaseFile = hBaseFileMap.get(name);
@@ -179,18 +192,54 @@ public class HBaseDirectory extends Directory implements Serializable {
     @Override
     public IndexOutput createOutput(String name) throws IOException {
         ensureOpen();
-        HBaseFile hBaseFile = new HBaseFile();
+        System.out.println("~~~~~~~~~~~~" + name);
+        HBaseFile hBaseFile = new HBaseFile(this);
         //deleting the existing file with the same name
         HBaseFile existing = hBaseFileMap.remove(name);
         if (existing != null) {
             sizeInBytes.addAndGet(-existing.sizeInBytes);
             existing.directory = null;
         }
+//        hBaseFile.buffers.add(Bytes.toBytes("hai sa punem ceva in HBase"));
+//        hBaseFile.buffers.add(Bytes.toBytes("aadfshgfdfghjkryjyhtgsfdcvby"));
+//        hBaseFile.buffers.add(Bytes.toBytes("altceva"));
         hBaseFileMap.put(name, hBaseFile);
+        return new HBaseIndexOutput(this, name);
+    }
 
+    protected static class HBaseIndexOutput extends BufferedIndexOutput {
 
-        Put put = new Put(toBytes(name));
-        return new HBaseIndexOutput(hBaseFile,hTable, put);
+        private final HBaseFile file;
+        private final Put put;
+
+        public HBaseIndexOutput(HBaseDirectory parent, String name) {
+            this.file = parent.hBaseFileMap.get(name);
+            this.put = new Put(toBytes(name));
+        }
+
+        /**
+         * Expert: implements buffer write.  Writes bytes at the current position in
+         * the output.
+         *
+         * @param b      the bytes to write
+         * @param offset the offset in the byte array
+         * @param len    the number of bytes to write
+         */
+        @Override
+        protected void flushBuffer(byte[] b, int offset, int len) throws IOException {
+            byte[] write = Arrays.copyOfRange(b, offset, offset + len);
+            file.buffers.add(write);
+            put.add(TERM_DOCUMENT_CF.name, AVRO_QUALIFIER.name, write);
+            hTable.put(put);
+        }
+
+        /**
+         * The number of bytes in the file.
+         */
+        @Override
+        public long length() throws IOException {
+            return file.getLength();
+        }
     }
 
     /**
@@ -199,10 +248,10 @@ public class HBaseDirectory extends Directory implements Serializable {
     @Override
     public IndexInput openInput(String name) throws IOException {
         ensureOpen();
-            Get get = new Get(toBytes(name));
-            get.addFamily(Bytes.toBytes("segments"));
-            get.addColumn(Bytes.toBytes("t"),Bytes.toBytes("avro"));
-            return new HBaseIndexInput(name, hTable, get);
+        Get get = new Get(toBytes(name));
+        get.addFamily(Bytes.toBytes("segments"));
+        get.addColumn(Bytes.toBytes("t"), Bytes.toBytes("avro"));
+        return new HBaseIndexInput(name, hTable, get);
     }
 
     /**

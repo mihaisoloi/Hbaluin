@@ -35,8 +35,7 @@ public class HBaseIndexOutput extends IndexOutput {
     private Put put;
     private static HTable hTable;
 
-    public HBaseIndexOutput(HBaseFile hBaseFile,HTable hTable, Put put) {
-        this.file = file;
+    public HBaseIndexOutput(HTable hTable, Put put) {
         this.put=put;
         this.hTable=hTable;
     }
