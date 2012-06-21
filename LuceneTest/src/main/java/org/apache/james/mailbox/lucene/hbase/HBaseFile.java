@@ -17,6 +17,9 @@
 
 package org.apache.james.mailbox.lucene.hbase;
 
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.RandomAccessFile;
 import java.io.Serializable;
 import java.util.ArrayList;
 
@@ -26,19 +29,11 @@ public class HBaseFile implements Serializable {
 
     //this must house the bytes form the Avro serialization
     protected ArrayList<byte[]> buffers = new ArrayList<byte[]>();
-    HBaseDirectory directory;
+    public HBaseDirectory directory;
     protected long sizeInBytes;
 
     // This is publicly modifiable via Directory.touchFile(), so direct access not supported
     private long lastModified = System.currentTimeMillis();
-
-    // File used as buffer, in no HBaseDirectory
-    public HBaseFile() {
-    }
-
-    HBaseFile(HBaseDirectory directory) {
-        this.directory = directory;
-    }
 
     // For non-stream access from thread that might be concurrent with writing
     public synchronized long getLength() {

@@ -22,22 +22,22 @@ import org.apache.hadoop.hbase.HColumnDescriptor;
 import org.apache.hadoop.hbase.HTableDescriptor;
 import org.apache.hadoop.hbase.MasterNotRunningException;
 import org.apache.hadoop.hbase.ZooKeeperConnectionException;
-import org.apache.hadoop.hbase.client.Get;
-import org.apache.hadoop.hbase.client.HBaseAdmin;
-import org.apache.hadoop.hbase.client.HTable;
-import org.apache.hadoop.hbase.client.Put;
+import org.apache.hadoop.hbase.client.*;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.lucene.store.*;
 import org.apache.lucene.util.ThreadInterruptedException;
 
+import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.Serializable;
 import java.util.Arrays;
 import java.util.Map;
+import java.util.NavigableMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
+import static org.apache.hadoop.hbase.util.Bytes.mapKey;
 import static org.apache.hadoop.hbase.util.Bytes.toBytes;
 import static org.apache.james.mailbox.lucene.hbase.HBaseNames.*;
 
@@ -47,12 +47,10 @@ public class HBaseDirectory extends Directory implements Serializable {
 //    private static final Log LOG = LogFactory.getLog(HBaseDirectory.class);
 
     //keys are the segment_name and lucene inverted index(i.e. contents of the segment file)
-    protected final Map<String, HBaseFile> hBaseFileMap = new ConcurrentHashMap<String, HBaseFile>();
+    protected static final Map<String, HBaseFile> hBaseFileMap = new ConcurrentHashMap<String, HBaseFile>();
 
     protected final AtomicLong sizeInBytes = new AtomicLong();
-
-    private static HBaseAdmin admin = null;
-    private static HTable hTable = null;
+    private Configuration config;
 
     /**
      * Constructs an empty {@link Directory}.
@@ -68,7 +66,8 @@ public class HBaseDirectory extends Directory implements Serializable {
 
     public HBaseDirectory(Configuration config) {
         this();
-
+        this.config = config;
+        HBaseAdmin admin = null;
         try {
             admin = new HBaseAdmin(config);
         } catch (MasterNotRunningException e) {
@@ -83,7 +82,6 @@ public class HBaseDirectory extends Directory implements Serializable {
                 HColumnDescriptor columnDescriptor = new HColumnDescriptor(TERM_DOCUMENT_CF.name);
                 tableDescriptor.addFamily(columnDescriptor);
                 admin.createTable(tableDescriptor);
-                hTable = new HTable(config, SEGMENTS.name);
             }
         } catch (IOException e) {
             e.printStackTrace();
@@ -193,28 +191,20 @@ public class HBaseDirectory extends Directory implements Serializable {
     public IndexOutput createOutput(String name) throws IOException {
         ensureOpen();
         System.out.println("~~~~~~~~~~~~" + name);
-        HBaseFile hBaseFile = new HBaseFile(this);
-        //deleting the existing file with the same name
-        HBaseFile existing = hBaseFileMap.remove(name);
-        if (existing != null) {
-            sizeInBytes.addAndGet(-existing.sizeInBytes);
-            existing.directory = null;
-        }
-//        hBaseFile.buffers.add(Bytes.toBytes("hai sa punem ceva in HBase"));
-//        hBaseFile.buffers.add(Bytes.toBytes("aadfshgfdfghjkryjyhtgsfdcvby"));
-//        hBaseFile.buffers.add(Bytes.toBytes("altceva"));
+        HBaseFile hBaseFile = new HBaseFile();
+
         hBaseFileMap.put(name, hBaseFile);
-        return new HBaseIndexOutput(this, name);
+        return new HBaseIndexOutput(name);
     }
 
-    protected static class HBaseIndexOutput extends BufferedIndexOutput {
+    protected class HBaseIndexOutput extends BufferedIndexOutput {
 
         private final HBaseFile file;
-        private final Put put;
+        private final String name;
 
-        public HBaseIndexOutput(HBaseDirectory parent, String name) {
-            this.file = parent.hBaseFileMap.get(name);
-            this.put = new Put(toBytes(name));
+        public HBaseIndexOutput(String name) {
+            this.file = hBaseFileMap.get(name);
+            this.name = name;
         }
 
         /**
@@ -227,10 +217,20 @@ public class HBaseDirectory extends Directory implements Serializable {
          */
         @Override
         protected void flushBuffer(byte[] b, int offset, int len) throws IOException {
-            byte[] write = Arrays.copyOfRange(b, offset, offset + len);
-            file.buffers.add(write);
-            put.add(TERM_DOCUMENT_CF.name, AVRO_QUALIFIER.name, write);
-            hTable.put(put);
+            Put put = new Put(toBytes(name));
+            HTable hTable = null;
+            try {
+                hTable = new HTable(config, SEGMENTS.name);
+                byte[] write = Arrays.copyOfRange(b, offset, offset + len);
+
+                //adding the contents of the file to memory as well
+                file.buffers.add(write);
+
+                put.add(TERM_DOCUMENT_CF.name, AVRO_QUALIFIER.name, write);
+                hTable.put(put);
+            } finally {
+                hTable.close();
+            }
         }
 
         /**
@@ -248,10 +248,69 @@ public class HBaseDirectory extends Directory implements Serializable {
     @Override
     public IndexInput openInput(String name) throws IOException {
         ensureOpen();
-        Get get = new Get(toBytes(name));
-        get.addFamily(Bytes.toBytes("segments"));
-        get.addColumn(Bytes.toBytes("t"), Bytes.toBytes("avro"));
-        return new HBaseIndexInput(name, hTable, get);
+        return new HBaseIndexInput(name);
+    }
+
+    protected class HBaseIndexInput extends BufferedIndexInput {
+        private String name;
+        private HBaseFile file;
+
+        public HBaseIndexInput(String name) throws FileNotFoundException {
+            this.name = name;
+            System.out.println("~~reading~~~~"+name);
+            this.file = hBaseFileMap.get(name);
+            if(file == null)
+                file = new HBaseFile();
+        }
+
+        /**
+         * Expert: implements buffer refill.  Reads bytes from the current position
+         * in the input.
+         *
+         * @param b      the array to read bytes into
+         * @param offset the offset in the array to start storing bytes
+         * @param length the number of bytes to read
+         */
+        @Override
+        protected void readInternal(byte[] b, int offset, int length) throws IOException {
+            Get get = new Get(toBytes(name));
+            get.addColumn(TERM_DOCUMENT_CF.name, AVRO_QUALIFIER.name);
+            HTable hTable = null;
+            try {
+                hTable = new HTable(config, SEGMENTS.name);
+                Result result = hTable.get(get);
+                NavigableMap<byte[], byte[]> myMap = result.getFamilyMap(TERM_DOCUMENT_CF.name);
+                b = myMap.get(AVRO_QUALIFIER.name);
+                file.buffers.add(b);
+            } finally {
+                hTable.close();
+            }
+        }
+
+        /**
+         * Expert: implements seek.  Sets current position in this file, where the
+         * next {@link #readInternal(byte[], int, int)} will occur.
+         *
+         * @see #readInternal(byte[], int, int)
+         */
+        @Override
+        protected void seekInternal(long pos) throws IOException {
+        }
+
+        /**
+         * Closes the stream to further operations.
+         */
+        @Override
+        public void close() throws IOException {
+        }
+
+        /**
+         * The number of bytes in the file.
+         */
+        @Override
+        public long length() {
+            return file.getLength();  //To change body of implemented methods use File | Settings | File Templates.
+        }
     }
 
     /**

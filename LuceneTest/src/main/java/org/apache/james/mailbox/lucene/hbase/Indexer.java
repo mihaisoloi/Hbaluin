@@ -22,6 +22,7 @@ import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
 import org.apache.lucene.index.*;
+import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.FSDirectory;
 
 import java.io.File;
@@ -33,13 +34,16 @@ import static org.apache.lucene.util.Version.LUCENE_36;
 
 public class Indexer {
     private final IndexWriter writer;
+    public final HBaseDirectory dir;
 
-    public Indexer(String indexDir) throws IOException {
-        writer = new IndexWriter(FSDirectory.open(new File(indexDir)), createConfig(true));
-    }
+    /*public Indexer(String indexDir) throws IOException {
+        dir= FSDirectory.open(new File(indexDir));
+        writer = new IndexWriter(dir, createConfig(true));
+    }*/
 
     public Indexer(Configuration conf) throws IOException {
-        writer = new IndexWriter(new HBaseDirectory(conf), createConfig(true));
+        dir = new HBaseDirectory(conf);
+        writer = new IndexWriter(dir, createConfig(true));
     }
 
     private IndexWriterConfig createConfig(boolean defaultMerge) {
@@ -47,10 +51,10 @@ public class Indexer {
                 new StandardAnalyzer(LUCENE_36));
         //the default merge policy for LUCENE_32 and above is TieredMergePolicy
         //which already has useCompoundFile set to true
-        if (defaultMerge)
-            ((TieredMergePolicy) config.getMergePolicy()).setNoCFSRatio(1.0);
-        else
-            config.setMergePolicy(NoMergePolicy.COMPOUND_FILES);
+//        if (defaultMerge)
+//            ((TieredMergePolicy) config.getMergePolicy()).setNoCFSRatio(1.0);
+//        else
+//            config.setMergePolicy(NoMergePolicy.COMPOUND_FILES);
 
         return config;
     }
@@ -66,7 +70,7 @@ public class Indexer {
         String dataDir = args[1];
 
         long start = System.currentTimeMillis();
-        Indexer indexer = new Indexer(indexDir);
+        /*Indexer indexer = new Indexer(indexDir);
         int numIndexed;
         try {
             numIndexed = indexer.index(dataDir, new TextFilesFilter());
@@ -75,7 +79,7 @@ public class Indexer {
         }
         long end = System.currentTimeMillis();
         System.out.println("Indexing " + numIndexed + " files took "
-                + (end - start) + "milliseconds");
+                + (end - start) + "milliseconds");*/
     }
 
     public int index(String dataDir, TextFilesFilter filter)

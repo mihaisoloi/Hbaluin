@@ -17,6 +17,7 @@
 
 package org.apache.james.mailbox.lucene.hbase;
 
+import org.apache.commons.collections.MapIterator;
 import org.apache.hadoop.hbase.client.Get;
 import org.apache.hadoop.hbase.client.HTable;
 import org.apache.hadoop.hbase.client.Result;
@@ -25,6 +26,7 @@ import org.apache.lucene.store.IndexInput;
 
 import java.io.IOException;
 import java.util.NavigableMap;
+import java.util.NavigableSet;
 
 public class HBaseIndexInput extends IndexInput {
 
@@ -102,10 +104,13 @@ public class HBaseIndexInput extends IndexInput {
      */
     @Override
     public void readBytes(byte[] b, int offset, int len) throws IOException {
-        get.addFamily(Bytes.toBytes("segments"));
-        get.addColumn(Bytes.toBytes("t"),Bytes.toBytes("avro"));
+        get.addColumn(HBaseNames.TERM_DOCUMENT_CF.name,HBaseNames.AVRO_QUALIFIER.name);
         Result result = hTable.get(get);
-        NavigableMap<byte[], byte[]> myMap = result.getFamilyMap(Bytes.toBytes("segments"));
-        b=myMap.get(Bytes.toBytes("sth"));
+        NavigableMap<byte[], byte[]> myMap = result.getFamilyMap(HBaseNames.TERM_DOCUMENT_CF.name);
+
+        for(byte[] keySet : myMap.navigableKeySet()){          //nu știu ce este exact in chei
+            System.out.println("~~~~>>>"+Bytes.toString(keySet));
+        }
+        b=myMap.get(Bytes.toBytes("contents"));
     }
 }

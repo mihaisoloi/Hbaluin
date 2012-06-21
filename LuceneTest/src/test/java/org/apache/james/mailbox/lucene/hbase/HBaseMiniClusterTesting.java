@@ -36,6 +36,15 @@ import org.apache.hadoop.hbase.client.*;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.io.IOUtils;
 import org.apache.james.mailbox.lucene.avro.AvroUtils;
+import org.apache.lucene.analysis.standard.StandardAnalyzer;
+import org.apache.lucene.document.Document;
+import org.apache.lucene.index.IndexReader;
+import org.apache.lucene.queryParser.ParseException;
+import org.apache.lucene.queryParser.QueryParser;
+import org.apache.lucene.search.IndexSearcher;
+import org.apache.lucene.search.Query;
+import org.apache.lucene.search.ScoreDoc;
+import org.apache.lucene.search.TopDocs;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -47,28 +56,18 @@ import java.util.NavigableMap;
 
 import static org.apache.hadoop.hbase.util.Bytes.toBytes;
 import static org.apache.james.mailbox.lucene.hbase.HBaseNames.*;
+import static org.apache.lucene.util.Version.LUCENE_36;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
-public class HBaseMiniClusterTesting {
+public class HBaseMiniClusterTesting extends HBaseSetup {
 
-    private static final Logger LOG = LoggerFactory.getLogger(HBaseMiniClusterTesting.class);
-    private static final HBaseClusterSingleton CLUSTER = HBaseClusterSingleton
-            .build();
-    private static HBaseAdmin admin = null;
     private Schema termDocument;
 
     @Before
     public void setUp() throws IOException {
-        CLUSTER.ensureTable(INDEX_TABLE.name, new byte[][]{COLUMN_FAMILY.name});
-        admin = new HBaseAdmin(CLUSTER.getConf());
         termDocument = AvroUtils
                 .parseSchema(new File("LuceneTest/resources/main/avro/TermDocument.avro"));
-    }
-
-    @After
-    public void tearDown() {
-        IOUtils.closeStream(admin);
     }
 
     @Test
@@ -154,7 +153,7 @@ public class HBaseMiniClusterTesting {
     }
 
     @Test
-    public void insertSegmentsIntoColumns() throws IOException{
+    public void insertSegmentsIntoColumns() throws IOException, ParseException {
         //indexing the text files and inserting the segments into the HBase cluster
         String dataDir = "LuceneTest/resources/main/data";
         Indexer indexer = new Indexer(CLUSTER.getConf());
@@ -165,5 +164,21 @@ public class HBaseMiniClusterTesting {
         } finally {
             indexer.close();
         }
+
+        IndexReader reader = IndexReader.open(indexer.dir);
+        IndexSearcher is = new IndexSearcher(reader);
+
+        QueryParser parser = new QueryParser(LUCENE_36, "contents",
+                new StandardAnalyzer(LUCENE_36));
+        Query query = parser.parse("apache");
+
+
+        TopDocs hits = is.search(query, 10);
+
+        for (ScoreDoc scoreDoc : hits.scoreDocs) {
+            Document doc = is.doc(scoreDoc.doc);
+            System.out.println(doc.get("fullpath"));
+        }
     }
+
 }
