@@ -17,10 +17,19 @@
 
 package org.apache.james.mailbox.lucene.hbase;
 
+import org.apache.hadoop.hbase.client.Get;
+import org.apache.hadoop.hbase.client.HTable;
+import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.lucene.store.IndexOutput;
 import org.junit.Test;
 
+import java.util.NavigableMap;
+
+import static org.apache.hadoop.hbase.util.Bytes.toBytes;
+import static org.apache.james.mailbox.lucene.hbase.HBaseNames.*;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 public class HBaseDirectoryTest extends HBaseSetup {
@@ -64,9 +73,18 @@ public class HBaseDirectoryTest extends HBaseSetup {
         HBaseDirectory directory = new HBaseDirectory(CLUSTER.getConf());
         IndexOutput io = directory.createOutput(key);
         io.writeBytes(bytesToWrite,bytesToWrite.length);
-        System.out.println(io.length()+"~~~~~~~~~~~~~~"+io.getFilePointer());
+        io.flush();
 
-//        assertTrue(directory.fileExists(key));
+        HTable hTable = new HTable(CLUSTER.getConf(), SEGMENTS.name);
+        Get get = new Get(toBytes(key));
+        get.addColumn(TERM_DOCUMENT_CF.name,AVRO_QUALIFIER.name);
+        Result result = hTable.get(get);
+        NavigableMap<byte[], byte[]> myMap = result
+                .getFamilyMap(TERM_DOCUMENT_CF.name);
+
+        assertNotNull(myMap);
+        assertEquals(content, Bytes.toString(myMap.get(AVRO_QUALIFIER.name)));
+        hTable.close();
     }
 
     @Test
