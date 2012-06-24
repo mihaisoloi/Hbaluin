@@ -27,6 +27,7 @@ import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.IndexInput;
 import org.apache.lucene.store.IndexOutput;
+import org.apache.lucene.store.SingleInstanceLockFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -36,9 +37,7 @@ import java.util.Arrays;
 import java.util.List;
 
 import static com.google.common.base.Preconditions.*;
-import static org.apache.james.mailbox.lucene.hbase.HBaseNames.SEGMENTS_TABLE;
-import static org.apache.james.mailbox.lucene.hbase.HBaseNames.TERM_DOCUMENT_CF;
-import static org.apache.james.mailbox.lucene.hbase.HBaseNames.CONTENTS_QUALIFIER;
+import static org.apache.james.mailbox.lucene.hbase.HBaseNames.*;
 
 public class HBaseDirectory extends Directory implements Serializable {
 
@@ -75,6 +74,12 @@ public class HBaseDirectory extends Directory implements Serializable {
         } catch (IOException e) {
             e.printStackTrace();
         }
+
+        try {
+            setLockFactory(new SingleInstanceLockFactory());
+        } catch (IOException e) {
+            // Cannot happen
+        }
     }
 
     /**
@@ -106,7 +111,7 @@ public class HBaseDirectory extends Directory implements Serializable {
             Closeables.closeQuietly(scanner);
             Closeables.closeQuietly(table);
         }
-        return (String[]) files.toArray();
+        return files.toArray(new String[files.size()]);
     }
 
     /**
@@ -193,7 +198,7 @@ public class HBaseDirectory extends Directory implements Serializable {
     public final long fileLength(String name) throws IOException {
         checkState(DIRECTORY_STATE_OPEN);
         // if we store the file length in HBase we can return only that, without transfering the file
-        IndexInput indexInput = new HIndexInput(config, name);
+        IndexInput indexInput = new HIndexInput(name);
         long len = indexInput.length();
         indexInput.close();
         return len;
@@ -205,7 +210,7 @@ public class HBaseDirectory extends Directory implements Serializable {
     @Override
     public IndexOutput createOutput(String name) throws IOException {
         checkState(DIRECTORY_STATE_OPEN);
-        return new HIndexOutput(config, name);
+        return new HIndexOutput(name);
     }
 
     /**
@@ -214,7 +219,7 @@ public class HBaseDirectory extends Directory implements Serializable {
     @Override
     public IndexInput openInput(String name) throws IOException {
         checkState(DIRECTORY_STATE_OPEN);
-        return new HIndexInput(config, name);
+        return new HIndexInput(name);
     }
 
     @Override
@@ -228,14 +233,12 @@ public class HBaseDirectory extends Directory implements Serializable {
      */
     protected class HIndexOutput extends IndexOutput {
 
-        private final Configuration configuration;
         private final String name;
         private byte[] fileContents = new byte[0];
         private boolean STREAM_STATE_OPEN = false;
-        private long pointerInBuffer = 0;
+        private int pointerInBuffer = -1;
 
-        public HIndexOutput(Configuration configuration, String name) {
-            this.configuration = checkNotNull(configuration);
+        public HIndexOutput(String name) {
             this.name = checkNotNull(name);
             STREAM_STATE_OPEN = true;
         }
@@ -269,14 +272,14 @@ public class HBaseDirectory extends Directory implements Serializable {
         @Override
         public long getFilePointer() {
             checkState(STREAM_STATE_OPEN);
-            return pointerInBuffer;
+            return pointerInBuffer < 0 ? 0 : pointerInBuffer;
         }
 
         @Override
         public void seek(long pos) throws IOException {
             checkState(STREAM_STATE_OPEN);
             checkPositionIndex((int) pos, fileContents.length);
-            pointerInBuffer = pos;
+            pointerInBuffer = (int) pos;
         }
 
         @Override
@@ -291,6 +294,7 @@ public class HBaseDirectory extends Directory implements Serializable {
             if (pointerInBuffer == fileContents.length) {
                 fileContents = Bytes.add(fileContents, new byte[]{b});
             } else {
+                pointerInBuffer = pointerInBuffer < 0 ? 0 : pointerInBuffer;
                 fileContents[((int) pointerInBuffer++)] = b;
             }
         }
@@ -300,29 +304,38 @@ public class HBaseDirectory extends Directory implements Serializable {
             checkState(STREAM_STATE_OPEN);
             checkPositionIndex(offset, fileContents.length);
             // overwriting bytes
+            pointerInBuffer++;
             if (fileContents.length < offset + b.length) {
                 fileContents = Bytes.add(Arrays.copyOfRange(fileContents, 0, offset), b);
             } else {
                 // if the bytes left are not enough till the end, we copy what is left over
-                fileContents = Bytes.add(
-                        Arrays.copyOfRange(fileContents, 0, offset),
-                        b,
-                        Arrays.copyOfRange(fileContents, offset + b.length, length)
-                );
+                while (length > 0) {
+                    int remainInBuffer = fileContents.length - pointerInBuffer;
+                    int bytesToCopy = length < remainInBuffer ? length : remainInBuffer;
+                    System.arraycopy(b, offset, fileContents, pointerInBuffer, bytesToCopy);
+                    offset += bytesToCopy;
+                    length -= bytesToCopy;
+                    pointerInBuffer += bytesToCopy;
+                }
+//                byte[] a = Arrays.copyOfRange(fileContents, 0, offset);
+//                byte[] c = Arrays.copyOfRange(fileContents, offset + b.length, length);
+//                fileContents = Bytes.add(a, b, c);
+//                        Arrays.copyOfRange(fileContents, 0, offset),
+//                        b,
+//                        Arrays.copyOfRange(fileContents, offset + length-1, length)
+//                );
             }
         }
     }
 
     protected class HIndexInput extends IndexInput {
         private String name;
-        private final Configuration config;
         // we read the whole segment in memory in this array
         private byte[] fileContents;
         private boolean STREAM_STATE_OPEN = false;
         private long pointerInBuffer = 0;
 
-        private HIndexInput(Configuration config, String name) {
-            this.config = checkNotNull(config);
+        private HIndexInput(String name) {
             this.name = checkNotNull(name);
             HTable table = null;
             try {
@@ -330,11 +343,16 @@ public class HBaseDirectory extends Directory implements Serializable {
                 Get get = new Get(Bytes.toBytes(name));
                 Result result = table.get(get);
                 // it is an error if the segment does not exist
-                checkState(!result.isEmpty());
-                // get the bytes from the column we store them in
-                fileContents = result.getValue(TERM_DOCUMENT_CF.name, CONTENTS_QUALIFIER.name);
-                LOG.info("Read from HBase: ", Bytes.toString(fileContents));
-                STREAM_STATE_OPEN = true;
+                if (result.isEmpty()) {
+                    if (STREAM_STATE_OPEN) {
+                        throw new IllegalStateException();
+                    }
+                } else {
+                    // get the bytes from the column we store them in
+                    fileContents = result.getValue(TERM_DOCUMENT_CF.name, CONTENTS_QUALIFIER.name);
+                    LOG.info("Read from HBase: ", Bytes.toString(fileContents));
+                    STREAM_STATE_OPEN = true;
+                }
             } catch (IOException e) {
                 LOG.info("Exception reading from HBase: ", e);
                 Throwables.propagate(e);
@@ -345,9 +363,9 @@ public class HBaseDirectory extends Directory implements Serializable {
 
         @Override
         public void close() throws IOException {
-            // operatios are possible only when the IndexInput is in state open
-            checkState(STREAM_STATE_OPEN);
-            STREAM_STATE_OPEN = false;
+            // operations are possible only when the IndexInput is in state open
+            if (STREAM_STATE_OPEN)
+                STREAM_STATE_OPEN = false;
         }
 
         @Override
@@ -370,8 +388,9 @@ public class HBaseDirectory extends Directory implements Serializable {
 
         @Override
         public byte readByte() throws IOException {
-            checkState(STREAM_STATE_OPEN);
-            return fileContents[((int) pointerInBuffer++)];
+            if (STREAM_STATE_OPEN)
+                return fileContents[((int) pointerInBuffer++)];
+            return 'b';
         }
 
         @Override

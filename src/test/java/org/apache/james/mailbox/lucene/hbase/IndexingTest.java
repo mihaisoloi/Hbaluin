@@ -41,7 +41,7 @@ import org.apache.lucene.store.RAMDirectory;
 import org.junit.Before;
 import org.junit.Test;
 
-public class IndexingTest {
+public class IndexingTest extends HBaseSetup{
     protected String[] ids = { "1", "2" };
     protected String[] unindexed = { "Netherlands", "Italy" };
     protected String[] unstored = { "Amsterdam has lots of bridges",
@@ -55,8 +55,9 @@ public class IndexingTest {
      * @throws java.lang.Exception
      */
     @Before
-    public void setUp() throws Exception {
-        directory = new RAMDirectory();
+    public void setUp() throws IOException{
+        super.setUp();
+        directory = new HBaseDirectory(CLUSTER.getConf());
 
         IndexWriter writer = getWriter();
 
@@ -64,7 +65,7 @@ public class IndexingTest {
             Document doc = new Document();
             doc.add(new Field("id", ids[i], Store.YES, Index.NOT_ANALYZED));
             doc.add(new Field("country", unindexed[i], Store.YES, Index.NO));
-            doc.add(new Field("contents", unstored[i], Store.NO, Index.ANALYZED));
+            doc.add(new Field("contents", unstored[i], Store.YES, Index.ANALYZED));
             doc.add(new Field("city", text[i], Store.YES, Index.ANALYZED));
             writer.addDocument(doc);
         }
@@ -135,7 +136,7 @@ public class IndexingTest {
      * @throws IOException
      */
     @Test
-    public void testindexReader() throws IOException {
+    public void testIndexReader() throws IOException {
         IndexReader reader = getReader();
         assertEquals(ids.length, reader.maxDoc());
         assertEquals(ids.length, reader.numDocs());
