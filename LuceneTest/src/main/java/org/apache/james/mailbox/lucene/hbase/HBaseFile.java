@@ -26,8 +26,6 @@ import java.util.ArrayList;
 public class HBaseFile implements Serializable {
 
     private static final long serialVersionUID = 1l;
-
-    //this must house the bytes form the Avro serialization
     protected ArrayList<byte[]> buffers = new ArrayList<byte[]>();
     public HBaseDirectory directory;
     protected long sizeInBytes;
@@ -57,7 +55,7 @@ public class HBaseFile implements Serializable {
         }
 
         if (directory != null) {
-            directory.sizeInBytes.getAndAdd(size);
+//            directory.sizeInBytes.getAndAdd(size);
         }
         return buffer;
     }

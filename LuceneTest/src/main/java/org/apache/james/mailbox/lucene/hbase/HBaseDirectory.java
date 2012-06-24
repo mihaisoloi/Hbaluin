@@ -17,56 +17,45 @@
 
 package org.apache.james.mailbox.lucene.hbase;
 
+import com.google.common.base.Throwables;
+import com.google.common.collect.Lists;
+import com.google.common.io.Closeables;
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.hbase.HColumnDescriptor;
-import org.apache.hadoop.hbase.HTableDescriptor;
-import org.apache.hadoop.hbase.MasterNotRunningException;
-import org.apache.hadoop.hbase.ZooKeeperConnectionException;
+import org.apache.hadoop.hbase.*;
 import org.apache.hadoop.hbase.client.*;
 import org.apache.hadoop.hbase.util.Bytes;
-import org.apache.lucene.store.*;
-import org.apache.lucene.util.ThreadInterruptedException;
+import org.apache.lucene.store.Directory;
+import org.apache.lucene.store.IndexInput;
+import org.apache.lucene.store.IndexOutput;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-import java.io.File;
-import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.Serializable;
 import java.util.Arrays;
-import java.util.Map;
-import java.util.NavigableMap;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicLong;
+import java.util.List;
 
-import static org.apache.hadoop.hbase.util.Bytes.mapKey;
-import static org.apache.hadoop.hbase.util.Bytes.toBytes;
-import static org.apache.james.mailbox.lucene.hbase.HBaseNames.*;
+import static com.google.common.base.Preconditions.*;
+import static org.apache.james.mailbox.lucene.hbase.HBaseNames.SEGMENTS_TABLE;
+import static org.apache.james.mailbox.lucene.hbase.HBaseNames.TERM_DOCUMENT_CF;
+import static org.apache.james.mailbox.lucene.hbase.HBaseNames.CONTENTS_QUALIFIER;
 
 public class HBaseDirectory extends Directory implements Serializable {
 
-
-//    private static final Log LOG = LogFactory.getLog(HBaseDirectory.class);
-
-    //keys are the segment_name and lucene inverted index(i.e. contents of the segment file)
-    protected static final Map<String, HBaseFile> hBaseFileMap = new ConcurrentHashMap<String, HBaseFile>();
-
-    protected final AtomicLong sizeInBytes = new AtomicLong();
-    private Configuration config;
+    private static final Logger LOG = LoggerFactory.getLogger(HBaseDirectory.class);
+    private boolean DIRECTORY_STATE_OPEN = false;
+    private final Configuration config;
 
     /**
-     * Constructs an empty {@link Directory}.
+     * Use constructor chaining this way !!
      */
     public HBaseDirectory() {
-        try {
-            //temporary single instance LockFactory
-            setLockFactory(new SingleInstanceLockFactory());
-        } catch (IOException e) {
-            // Cannot happen
-        }
+        this(HBaseConfiguration.create());
     }
 
     public HBaseDirectory(Configuration config) {
-        this();
-        this.config = config;
+        this.config = checkNotNull(config);
+        DIRECTORY_STATE_OPEN = true;
         HBaseAdmin admin = null;
         try {
             admin = new HBaseAdmin(config);
@@ -77,8 +66,8 @@ public class HBaseDirectory extends Directory implements Serializable {
         }
 
         try {
-            if (!admin.tableExists(SEGMENTS.name)) {
-                HTableDescriptor tableDescriptor = new HTableDescriptor(SEGMENTS.name);
+            if (!admin.tableExists(SEGMENTS_TABLE.name)) {
+                HTableDescriptor tableDescriptor = new HTableDescriptor(SEGMENTS_TABLE.name);
                 HColumnDescriptor columnDescriptor = new HColumnDescriptor(TERM_DOCUMENT_CF.name);
                 tableDescriptor.addFamily(columnDescriptor);
                 admin.createTable(tableDescriptor);
@@ -88,10 +77,36 @@ public class HBaseDirectory extends Directory implements Serializable {
         }
     }
 
+    /**
+     * Files are rows in HBase: list == Scan.
+     *
+     * @return
+     * @throws IOException
+     */
     @Override
     public String[] listAll() throws IOException {
-        ensureOpen();
-        return hBaseFileMap.keySet().toArray(new String[0]);
+        checkState(DIRECTORY_STATE_OPEN);
+        List<String> files = Lists.newArrayList();
+        HTable table = null;
+        ResultScanner scanner = null;
+        try {
+            table = new HTable(config, SEGMENTS_TABLE.name);
+            Scan scan = new Scan();
+            // nu ne intereseaza doar valoarea rândului == rokey, asa aducem toate coloanele
+            scan.addFamily(TERM_DOCUMENT_CF.name);
+            scanner = table.getScanner(scan);
+            Result result;
+            while ((result = scanner.next()) != null) {
+                files.add(Bytes.toString(result.getRow()));
+            }
+        } catch (IOException e) {
+            LOG.info("Exception reading from HBase", e);
+            Throwables.propagate(e);
+        } finally {
+            Closeables.closeQuietly(scanner);
+            Closeables.closeQuietly(table);
+        }
+        return (String[]) files.toArray();
     }
 
     /**
@@ -103,8 +118,22 @@ public class HBaseDirectory extends Directory implements Serializable {
      */
     @Override
     public boolean fileExists(String name) throws IOException {
-        ensureOpen();
-        return hBaseFileMap.containsKey(name);
+        checkState(DIRECTORY_STATE_OPEN);
+        HTable table = null;
+        try {
+            table = new HTable(config, SEGMENTS_TABLE.name);
+            Get get = new Get(Bytes.toBytes(name));
+            Result result = table.get(get);
+            if (result.isEmpty()) {
+                return false;
+            }
+        } catch (IOException e) {
+            LOG.info("Exception reading from HBase", e);
+            Throwables.propagate(e);
+        } finally {
+            Closeables.closeQuietly(table);
+        }
+        return true;
     }
 
     /**
@@ -115,12 +144,8 @@ public class HBaseDirectory extends Directory implements Serializable {
     @Override
     @Deprecated
     public long fileModified(String name) throws IOException {
-        ensureOpen();
-        HBaseFile hBaseFile = hBaseFileMap.get(name);
-        if (hBaseFile == null) {
-            throw new FileNotFoundException(name);
-        }
-        return hBaseFile.getLastModified();
+        checkState(DIRECTORY_STATE_OPEN);
+        return 0L;
     }
 
     /**
@@ -133,23 +158,8 @@ public class HBaseDirectory extends Directory implements Serializable {
     @Override
     @Deprecated
     public void touchFile(String name) throws IOException {
-        ensureOpen();
-        HBaseFile file = hBaseFileMap.get(name);
-        if (file == null) {
-            throw new FileNotFoundException(name);
-        }
-
-        long ts2, ts1 = System.currentTimeMillis();
-        do {
-            try {
-                Thread.sleep(0, 1);
-            } catch (InterruptedException ie) {
-                throw new ThreadInterruptedException(ie);
-            }
-            ts2 = System.currentTimeMillis();
-        } while (ts1 == ts2);
-
-        file.setLastModified(ts2);
+        checkState(DIRECTORY_STATE_OPEN);
+        // use checkAndPut() on a column if needed.
     }
 
     /**
@@ -159,13 +169,18 @@ public class HBaseDirectory extends Directory implements Serializable {
      */
     @Override
     public void deleteFile(String name) throws IOException {
-        ensureOpen();
-        HBaseFile hBaseFile = hBaseFileMap.remove(name);
-        if (hBaseFile != null) {
-            hBaseFile.directory = null;
-            sizeInBytes.addAndGet(hBaseFile.sizeInBytes);
-        } else {
-            throw new FileNotFoundException(name);
+        checkState(DIRECTORY_STATE_OPEN);
+        HTable table = null;
+        try {
+            table = new HTable(config, SEGMENTS_TABLE.name);
+            Delete delete = new Delete(Bytes.toBytes(name));
+            table.delete(delete);
+            table.flushCommits();
+        } catch (IOException e) {
+            LOG.info("Exception reading from HBase", e);
+            Throwables.propagate(e);
+        } finally {
+            Closeables.closeQuietly(table);
         }
     }
 
@@ -176,12 +191,12 @@ public class HBaseDirectory extends Directory implements Serializable {
      */
     @Override
     public final long fileLength(String name) throws IOException {
-        ensureOpen();
-        HBaseFile file = hBaseFileMap.get(name);
-        if (file == null) {
-            throw new FileNotFoundException(name);
-        }
-        return file.getLength();
+        checkState(DIRECTORY_STATE_OPEN);
+        // if we store the file length in HBase we can return only that, without transfering the file
+        IndexInput indexInput = new HIndexInput(config, name);
+        long len = indexInput.length();
+        indexInput.close();
+        return len;
     }
 
     /**
@@ -189,57 +204,8 @@ public class HBaseDirectory extends Directory implements Serializable {
      */
     @Override
     public IndexOutput createOutput(String name) throws IOException {
-        ensureOpen();
-        System.out.println("~~~~~~~~~~~~" + name);
-        HBaseFile hBaseFile = new HBaseFile();
-
-        hBaseFileMap.put(name, hBaseFile);
-        return new HBaseIndexOutput(name);
-    }
-
-    protected class HBaseIndexOutput extends BufferedIndexOutput {
-
-        private final HBaseFile file;
-        private final String name;
-
-        public HBaseIndexOutput(String name) {
-            this.file = hBaseFileMap.get(name);
-            this.name = name;
-        }
-
-        /**
-         * Expert: implements buffer write.  Writes bytes at the current position in
-         * the output.
-         *
-         * @param b      the bytes to write
-         * @param offset the offset in the byte array
-         * @param len    the number of bytes to write
-         */
-        @Override
-        protected void flushBuffer(byte[] b, int offset, int len) throws IOException {
-            Put put = new Put(toBytes(name));
-            HTable hTable = null;
-            try {
-                hTable = new HTable(config, SEGMENTS.name);
-                byte[] write = Arrays.copyOfRange(b, offset, offset + len);
-
-                //adding the contents of the file to memory as well
-                file.buffers.add(write);
-
-                put.add(TERM_DOCUMENT_CF.name, AVRO_QUALIFIER.name, write);
-                hTable.put(put);
-            } finally {
-                hTable.close();
-            }
-        }
-
-        /**
-         * The number of bytes in the file.
-         */
-        @Override
-        public long length() throws IOException {
-            return file.getLength();
-        }
+        checkState(DIRECTORY_STATE_OPEN);
+        return new HIndexOutput(config, name);
     }
 
     /**
@@ -247,78 +213,171 @@ public class HBaseDirectory extends Directory implements Serializable {
      */
     @Override
     public IndexInput openInput(String name) throws IOException {
-        ensureOpen();
-        return new HBaseIndexInput(name);
+        checkState(DIRECTORY_STATE_OPEN);
+        return new HIndexInput(config, name);
     }
 
-    protected class HBaseIndexInput extends BufferedIndexInput {
-        private String name;
-        private HBaseFile file;
-
-        public HBaseIndexInput(String name) throws FileNotFoundException {
-            this.name = name;
-            System.out.println("~~reading~~~~"+name);
-            this.file = hBaseFileMap.get(name);
-            if(file == null)
-                file = new HBaseFile();
-        }
-
-        /**
-         * Expert: implements buffer refill.  Reads bytes from the current position
-         * in the input.
-         *
-         * @param b      the array to read bytes into
-         * @param offset the offset in the array to start storing bytes
-         * @param length the number of bytes to read
-         */
-        @Override
-        protected void readInternal(byte[] b, int offset, int length) throws IOException {
-            Get get = new Get(toBytes(name));
-            get.addColumn(TERM_DOCUMENT_CF.name, AVRO_QUALIFIER.name);
-            HTable hTable = null;
-            try {
-                hTable = new HTable(config, SEGMENTS.name);
-                Result result = hTable.get(get);
-                NavigableMap<byte[], byte[]> myMap = result.getFamilyMap(TERM_DOCUMENT_CF.name);
-                b = myMap.get(AVRO_QUALIFIER.name);
-                file.buffers.add(b);
-            } finally {
-                hTable.close();
-            }
-        }
-
-        /**
-         * Expert: implements seek.  Sets current position in this file, where the
-         * next {@link #readInternal(byte[], int, int)} will occur.
-         *
-         * @see #readInternal(byte[], int, int)
-         */
-        @Override
-        protected void seekInternal(long pos) throws IOException {
-        }
-
-        /**
-         * Closes the stream to further operations.
-         */
-        @Override
-        public void close() throws IOException {
-        }
-
-        /**
-         * The number of bytes in the file.
-         */
-        @Override
-        public long length() {
-            return file.getLength();  //To change body of implemented methods use File | Settings | File Templates.
-        }
+    @Override
+    public void close() throws IOException {
+        checkState(DIRECTORY_STATE_OPEN);
+        DIRECTORY_STATE_OPEN = true;
     }
 
     /**
-     * Closes the store to future operations, releasing associated memory.
+     * Stores the output in a byte array and flushes that to HBase. Inefficient.
      */
-    @Override
-    public void close() {
-        isOpen = false;
-        hBaseFileMap.clear();
+    protected class HIndexOutput extends IndexOutput {
+
+        private final Configuration configuration;
+        private final String name;
+        private byte[] fileContents = new byte[0];
+        private boolean STREAM_STATE_OPEN = false;
+        private long pointerInBuffer = 0;
+
+        public HIndexOutput(Configuration configuration, String name) {
+            this.configuration = checkNotNull(configuration);
+            this.name = checkNotNull(name);
+            STREAM_STATE_OPEN = true;
+        }
+
+        @Override
+        public void flush() throws IOException {
+            checkState(STREAM_STATE_OPEN);
+            HTable table = null;
+            try {
+                table = new HTable(config, SEGMENTS_TABLE.name);
+                Put put = new Put(Bytes.toBytes(name));
+                LOG.info("Bytes in put {}", Bytes.toString(fileContents));
+                put.add(TERM_DOCUMENT_CF.name, CONTENTS_QUALIFIER.name, fileContents);
+                table.put(put);
+                LOG.info("Writing to HBase {}", put.toJSON());
+            } catch (IOException e) {
+                LOG.info("Exception flushing file to HBase", e);
+                Throwables.propagate(e);
+            } finally {
+                Closeables.closeQuietly(table);
+            }
+        }
+
+        @Override
+        public void close() throws IOException {
+            checkState(STREAM_STATE_OPEN);
+            flush();
+            STREAM_STATE_OPEN = false;
+        }
+
+        @Override
+        public long getFilePointer() {
+            checkState(STREAM_STATE_OPEN);
+            return pointerInBuffer;
+        }
+
+        @Override
+        public void seek(long pos) throws IOException {
+            checkState(STREAM_STATE_OPEN);
+            checkPositionIndex((int) pos, fileContents.length);
+            pointerInBuffer = pos;
+        }
+
+        @Override
+        public long length() throws IOException {
+            checkState(STREAM_STATE_OPEN);
+            return fileContents.length;
+        }
+
+        @Override
+        public void writeByte(byte b) throws IOException {
+            checkState(STREAM_STATE_OPEN);
+            if (pointerInBuffer == fileContents.length) {
+                fileContents = Bytes.add(fileContents, new byte[]{b});
+            } else {
+                fileContents[((int) pointerInBuffer++)] = b;
+            }
+        }
+
+        @Override
+        public void writeBytes(byte[] b, int offset, int length) throws IOException {
+            checkState(STREAM_STATE_OPEN);
+            checkPositionIndex(offset, fileContents.length);
+            // overwriting bytes
+            if (fileContents.length < offset + b.length) {
+                fileContents = Bytes.add(Arrays.copyOfRange(fileContents, 0, offset), b);
+            } else {
+                // if the bytes left are not enough till the end, we copy what is left over
+                fileContents = Bytes.add(
+                        Arrays.copyOfRange(fileContents, 0, offset),
+                        b,
+                        Arrays.copyOfRange(fileContents, offset + b.length, length)
+                );
+            }
+        }
+    }
+
+    protected class HIndexInput extends IndexInput {
+        private String name;
+        private final Configuration config;
+        // we read the whole segment in memory in this array
+        private byte[] fileContents;
+        private boolean STREAM_STATE_OPEN = false;
+        private long pointerInBuffer = 0;
+
+        private HIndexInput(Configuration config, String name) {
+            this.config = checkNotNull(config);
+            this.name = checkNotNull(name);
+            HTable table = null;
+            try {
+                table = new HTable(config, SEGMENTS_TABLE.name);
+                Get get = new Get(Bytes.toBytes(name));
+                Result result = table.get(get);
+                // it is an error if the segment does not exist
+                checkState(!result.isEmpty());
+                // get the bytes from the column we store them in
+                fileContents = result.getValue(TERM_DOCUMENT_CF.name, CONTENTS_QUALIFIER.name);
+                LOG.info("Read from HBase: ", Bytes.toString(fileContents));
+                STREAM_STATE_OPEN = true;
+            } catch (IOException e) {
+                LOG.info("Exception reading from HBase: ", e);
+                Throwables.propagate(e);
+            } finally {
+                Closeables.closeQuietly(table);
+            }
+        }
+
+        @Override
+        public void close() throws IOException {
+            // operatios are possible only when the IndexInput is in state open
+            checkState(STREAM_STATE_OPEN);
+            STREAM_STATE_OPEN = false;
+        }
+
+        @Override
+        public long getFilePointer() {
+            checkState(STREAM_STATE_OPEN);
+            return pointerInBuffer;
+        }
+
+        @Override
+        public void seek(long pos) throws IOException {
+            checkState(STREAM_STATE_OPEN);
+            pointerInBuffer = pos;
+        }
+
+        @Override
+        public long length() {
+            checkState(STREAM_STATE_OPEN);
+            return fileContents.length;
+        }
+
+        @Override
+        public byte readByte() throws IOException {
+            checkState(STREAM_STATE_OPEN);
+            return fileContents[((int) pointerInBuffer++)];
+        }
+
+        @Override
+        public void readBytes(byte[] b, int offset, int len) throws IOException {
+            checkState(STREAM_STATE_OPEN);
+            Bytes.putBytes(b, 0, fileContents, offset, len);
+        }
     }
 }

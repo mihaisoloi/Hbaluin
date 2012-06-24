@@ -41,7 +41,6 @@ public abstract class HBaseSetup {
 
     @Before
     public void setUp() throws IOException {
-        CLUSTER.ensureTable(INDEX_TABLE.name, new byte[][]{COLUMN_FAMILY.name});
         admin = new HBaseAdmin(CLUSTER.getConf());
     }
 

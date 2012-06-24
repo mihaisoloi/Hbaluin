@@ -20,7 +20,7 @@ package org.apache.james.mailbox.lucene.hbase;
 import org.apache.hadoop.hbase.util.Bytes;
 
 public enum HBaseNames {
-    INDEX_TABLE("index"), COLUMN_FAMILY("F"), TERM_DOCUMENT_CF("T"), SEGMENTS("segments"), AVRO_QUALIFIER("avro");
+    INDEX_TABLE("INDEX"), COLUMN_FAMILY("F"), TERM_DOCUMENT_CF("T"), SEGMENTS_TABLE("SEGMENTS"), CONTENTS_QUALIFIER("CONTENT");
 
     public final byte[] name;
 
