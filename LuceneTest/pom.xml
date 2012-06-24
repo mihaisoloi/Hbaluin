@@ -10,35 +10,10 @@
 			<plugin>
 				<artifactId>maven-compiler-plugin</artifactId>
 				<configuration>
-					<source>1.6</source>
-					<target>1.6</target>
+					<source>1.7</source>
+					<target>1.7</target>
 				</configuration>
 			</plugin>
-            <plugin>
-              <groupId>org.apache.avro</groupId>
-              <artifactId>avro-maven-plugin</artifactId>
-              <version>1.6.3</version>
-              <executions>
-                <execution>
-                  <id>schemas</id>
-                  <phase>generate-sources</phase>
-                  <goals>
-                    <goal>schema</goal>
-                    <goal>protocol</goal>
-                    <goal>idl-protocol</goal>
-                  </goals>
-                  <configuration>
-                    <excludes>
-                      <exclude>**/mapred/tether/**</exclude>
-                    </excludes>
-                    <sourceDirectory>${project.basedir}/resources/main/avro/</sourceDirectory>
-                    <outputDirectory>${project.basedir}/src/main/java/</outputDirectory>
-                    <testSourceDirectory>${project.basedir}/resources/test/avro/</testSourceDirectory>
-                    <testOutputDirectory>${project.basedir}/src/test/java/</testOutputDirectory>
-                  </configuration>
-                </execution>
-              </executions>
-            </plugin>
 		</plugins>
 		<resources>
 		  <resource>
@@ -96,5 +71,5 @@
           <version>1.6.5</version>
           <scope>test</scope>
         </dependency>
-	</dependencies>
+    </dependencies>
 </project>

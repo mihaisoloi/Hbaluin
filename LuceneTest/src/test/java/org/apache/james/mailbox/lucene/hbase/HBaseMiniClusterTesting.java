@@ -62,14 +62,6 @@ import static org.junit.Assert.assertTrue;
 
 public class HBaseMiniClusterTesting extends HBaseSetup {
 
-    private Schema termDocument;
-
-    @Before
-    public void setUp() throws IOException {
-        termDocument = AvroUtils
-                .parseSchema(new File("LuceneTest/resources/main/avro/TermDocument.avro"));
-    }
-
     @Test
     public void insertDataIntoHBaseNodes() throws IOException {
         assertTrue(admin.tableExists(INDEX_TABLE.name));
@@ -86,12 +78,13 @@ public class HBaseMiniClusterTesting extends HBaseSetup {
         htable.put(put);
         htable.flushCommits();
         Get get = new Get(toBytes("mihai"));
-        get.addFamily(COLUMN_FAMILY.name);
+//        get.addFamily(COLUMN_FAMILY.name);
+        get.addColumn(COLUMN_FAMILY.name,toBytes("varsta"));
         Result result = htable.get(get);
         NavigableMap<byte[], byte[]> myMap = result
                 .getFamilyMap(COLUMN_FAMILY.name);
         assertEquals(27, Bytes.toInt(myMap.get(toBytes("varsta"))));
-        assertEquals("male", Bytes.toString(myMap.get(toBytes("sex"))));
+//        assertEquals("male", Bytes.toString(myMap.get(toBytes("sex"))));
         htable.close();
     }
 
@@ -106,6 +99,9 @@ public class HBaseMiniClusterTesting extends HBaseSetup {
     @Test
     public void insertAvroBLOBIntoColumns() throws IOException {
         //constructing the avro blob
+        Schema termDocument = AvroUtils
+                .parseSchema(new File("LuceneTest/resources/main/avro/TermDocument.avro"));
+
         ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
         Encoder encoder = EncoderFactory.get()
                 .binaryEncoder(outputStream, null);

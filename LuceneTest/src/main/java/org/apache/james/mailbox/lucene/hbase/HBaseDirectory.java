@@ -23,11 +23,9 @@ import org.apache.hadoop.hbase.HTableDescriptor;
 import org.apache.hadoop.hbase.MasterNotRunningException;
 import org.apache.hadoop.hbase.ZooKeeperConnectionException;
 import org.apache.hadoop.hbase.client.*;
-import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.lucene.store.*;
 import org.apache.lucene.util.ThreadInterruptedException;
 
-import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.Serializable;
@@ -37,7 +35,6 @@ import java.util.NavigableMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
-import static org.apache.hadoop.hbase.util.Bytes.mapKey;
 import static org.apache.hadoop.hbase.util.Bytes.toBytes;
 import static org.apache.james.mailbox.lucene.hbase.HBaseNames.*;
 
@@ -47,7 +44,7 @@ public class HBaseDirectory extends Directory implements Serializable {
 //    private static final Log LOG = LogFactory.getLog(HBaseDirectory.class);
 
     //keys are the segment_name and lucene inverted index(i.e. contents of the segment file)
-    protected static final Map<String, HBaseFile> hBaseFileMap = new ConcurrentHashMap<String, HBaseFile>();
+    public static final Map<String, HBaseFile> hBaseFileMap = new ConcurrentHashMap<String, HBaseFile>();
 
     protected final AtomicLong sizeInBytes = new AtomicLong();
     private Configuration config;
@@ -190,7 +187,6 @@ public class HBaseDirectory extends Directory implements Serializable {
     @Override
     public IndexOutput createOutput(String name) throws IOException {
         ensureOpen();
-        System.out.println("~~~~~~~~~~~~" + name);
         HBaseFile hBaseFile = new HBaseFile();
 
         hBaseFileMap.put(name, hBaseFile);
@@ -248,69 +244,7 @@ public class HBaseDirectory extends Directory implements Serializable {
     @Override
     public IndexInput openInput(String name) throws IOException {
         ensureOpen();
-        return new HBaseIndexInput(name);
-    }
-
-    protected class HBaseIndexInput extends BufferedIndexInput {
-        private String name;
-        private HBaseFile file;
-
-        public HBaseIndexInput(String name) throws FileNotFoundException {
-            this.name = name;
-            System.out.println("~~reading~~~~"+name);
-            this.file = hBaseFileMap.get(name);
-            if(file == null)
-                file = new HBaseFile();
-        }
-
-        /**
-         * Expert: implements buffer refill.  Reads bytes from the current position
-         * in the input.
-         *
-         * @param b      the array to read bytes into
-         * @param offset the offset in the array to start storing bytes
-         * @param length the number of bytes to read
-         */
-        @Override
-        protected void readInternal(byte[] b, int offset, int length) throws IOException {
-            Get get = new Get(toBytes(name));
-            get.addColumn(TERM_DOCUMENT_CF.name, AVRO_QUALIFIER.name);
-            HTable hTable = null;
-            try {
-                hTable = new HTable(config, SEGMENTS.name);
-                Result result = hTable.get(get);
-                NavigableMap<byte[], byte[]> myMap = result.getFamilyMap(TERM_DOCUMENT_CF.name);
-                b = myMap.get(AVRO_QUALIFIER.name);
-                file.buffers.add(b);
-            } finally {
-                hTable.close();
-            }
-        }
-
-        /**
-         * Expert: implements seek.  Sets current position in this file, where the
-         * next {@link #readInternal(byte[], int, int)} will occur.
-         *
-         * @see #readInternal(byte[], int, int)
-         */
-        @Override
-        protected void seekInternal(long pos) throws IOException {
-        }
-
-        /**
-         * Closes the stream to further operations.
-         */
-        @Override
-        public void close() throws IOException {
-        }
-
-        /**
-         * The number of bytes in the file.
-         */
-        @Override
-        public long length() {
-            return file.getLength();  //To change body of implemented methods use File | Settings | File Templates.
-        }
+        return new HBaseIndexInput(name,config);
     }
 
     /**

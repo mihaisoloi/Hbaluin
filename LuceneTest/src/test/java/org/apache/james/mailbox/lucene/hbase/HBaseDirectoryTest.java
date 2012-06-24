@@ -19,18 +19,21 @@ package org.apache.james.mailbox.lucene.hbase;
 
 import org.apache.hadoop.hbase.client.Get;
 import org.apache.hadoop.hbase.client.HTable;
+import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.util.Bytes;
+import org.apache.lucene.store.IndexInput;
 import org.apache.lucene.store.IndexOutput;
 import org.junit.Test;
 
+import java.util.Arrays;
 import java.util.NavigableMap;
 
 import static org.apache.hadoop.hbase.util.Bytes.toBytes;
 import static org.apache.james.mailbox.lucene.hbase.HBaseNames.*;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.assertNotSame;
 
 public class HBaseDirectoryTest extends HBaseSetup {
 
@@ -64,20 +67,24 @@ public class HBaseDirectoryTest extends HBaseSetup {
 
     }
 
+    String key = "testFileName";
+    String content = "mihai";
+    byte[] bytesToWrite = Bytes.toBytes(content);
+
+    /**
+     * checking to see if the insertion of the index is done properly
+     */
     @Test
     public void testCreateOutput() throws Exception {
-        String key="testFileName";
-        String content="mihai";
-        byte[] bytesToWrite = Bytes.toBytes(content);
 
         HBaseDirectory directory = new HBaseDirectory(CLUSTER.getConf());
-        IndexOutput io = directory.createOutput(key);
-        io.writeBytes(bytesToWrite,bytesToWrite.length);
-        io.flush();
+        IndexOutput out = directory.createOutput(key);
+        out.writeBytes(bytesToWrite, bytesToWrite.length);
+        out.flush();
 
         HTable hTable = new HTable(CLUSTER.getConf(), SEGMENTS.name);
         Get get = new Get(toBytes(key));
-        get.addColumn(TERM_DOCUMENT_CF.name,AVRO_QUALIFIER.name);
+        get.addColumn(TERM_DOCUMENT_CF.name, AVRO_QUALIFIER.name);
         Result result = hTable.get(get);
         NavigableMap<byte[], byte[]> myMap = result
                 .getFamilyMap(TERM_DOCUMENT_CF.name);
@@ -87,9 +94,26 @@ public class HBaseDirectoryTest extends HBaseSetup {
         hTable.close();
     }
 
+    /**
+     * checking to see if the reading of the index is done properly
+     */
     @Test
     public void testOpenInput() throws Exception {
+        //creating segments table
+        HBaseDirectory directory = new HBaseDirectory(CLUSTER.getConf());
 
+        HTable hTable = new HTable(CLUSTER.getConf(), SEGMENTS.name);
+        Put put = new Put(toBytes(key));
+        put.add(TERM_DOCUMENT_CF.name, AVRO_QUALIFIER.name, bytesToWrite);
+        hTable.put(put);
+        hTable.flushCommits();
+
+        IndexInput in = directory.openInput(key);
+//        byte[] bytesToReadIn = new byte[bytesToWrite.length];
+//        in.readBytes(bytesToReadIn, 0, bytesToWrite.length);
+
+//        System.out.println("~~~~WTF~~~"+new String(bytesToReadIn));
+        assertEquals(content, HBaseDirectory.hBaseFileMap.get(key).getBuffer(0));
     }
 
     @Test

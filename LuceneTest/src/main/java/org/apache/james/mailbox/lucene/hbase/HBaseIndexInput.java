@@ -17,34 +17,28 @@
 
 package org.apache.james.mailbox.lucene.hbase;
 
-import org.apache.commons.collections.MapIterator;
 import org.apache.hadoop.hbase.client.Get;
 import org.apache.hadoop.hbase.client.HTable;
 import org.apache.hadoop.hbase.client.Result;
-import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.lucene.store.IndexInput;
+import org.apache.hadoop.conf.Configuration;
 
 import java.io.IOException;
 import java.util.NavigableMap;
-import java.util.NavigableSet;
+import static org.apache.james.mailbox.lucene.hbase.HBaseNames.*;
+
+import static org.apache.hadoop.hbase.util.Bytes.toBytes;
 
 public class HBaseIndexInput extends IndexInput {
 
-    private static Get get;
-    private static HBaseFile file;
-    private static String fileName;
-    private static HTable hTable;
+    private final String name;
+    private final Configuration config;
 
-    public HBaseIndexInput(HBaseFile file,HTable hTable, Get get) {
-        this.file=file;
-        this.get=get;
-        this.hTable = hTable;
-    }
 
-    public HBaseIndexInput(String name,HTable hTable, Get get) {
-        this.fileName=name;
-        this.get=get;
-        this.hTable = hTable;
+    public HBaseIndexInput(String name,Configuration config) {
+        super("HBaseIndexInput(name=" + name + ")");
+        this.name=name;
+        this.config=config;
     }
 
     /**
@@ -52,7 +46,7 @@ public class HBaseIndexInput extends IndexInput {
      */
     @Override
     public void close() throws IOException {
-        //To change body of implemented methods use File | Settings | File Templates.
+        // nothing to do here
     }
 
     /**
@@ -63,7 +57,7 @@ public class HBaseIndexInput extends IndexInput {
      */
     @Override
     public long getFilePointer() {
-        return 0;  //To change body of implemented methods use File | Settings | File Templates.
+        return 0;
     }
 
     /**
@@ -73,7 +67,6 @@ public class HBaseIndexInput extends IndexInput {
      */
     @Override
     public void seek(long pos) throws IOException {
-        //To change body of implemented methods use File | Settings | File Templates.
     }
 
     /**
@@ -81,7 +74,27 @@ public class HBaseIndexInput extends IndexInput {
      */
     @Override
     public long length() {
-        return 0;  //To change body of implemented methods use File | Settings | File Templates.
+        Get get = new Get(toBytes(name));
+        get.addColumn(TERM_DOCUMENT_CF.name, AVRO_QUALIFIER.name);
+        HTable hTable = null;
+        try {
+            hTable = new HTable(config, SEGMENTS.name);
+            Result result = hTable.get(get);
+            NavigableMap<byte[], byte[]> myMap = result.getFamilyMap(TERM_DOCUMENT_CF.name);
+            if (myMap != null) { //index does not exist
+                byte[] value = myMap.get(AVRO_QUALIFIER.name);
+                return value.length;
+            }
+        } catch (IOException ioe) {
+            System.err.print("Exception while computing the size of the bytes to be read from the HTable!");
+        } finally {
+            try {
+                hTable.close();
+            } catch (IOException ioe) {
+                //do nothing
+            }
+        }
+        return 0;
     }
 
     /**
@@ -91,7 +104,9 @@ public class HBaseIndexInput extends IndexInput {
      */
     @Override
     public byte readByte() throws IOException {
-        return 0;  //To change body of implemented methods use File | Settings | File Templates.
+        byte[] bytes = new byte[1];
+        readBytes(bytes,0,1);
+        return bytes[0];  //To change body of implemented methods use File | Settings | File Templates.
     }
 
     /**
@@ -104,13 +119,25 @@ public class HBaseIndexInput extends IndexInput {
      */
     @Override
     public void readBytes(byte[] b, int offset, int len) throws IOException {
-        get.addColumn(HBaseNames.TERM_DOCUMENT_CF.name,HBaseNames.AVRO_QUALIFIER.name);
-        Result result = hTable.get(get);
-        NavigableMap<byte[], byte[]> myMap = result.getFamilyMap(HBaseNames.TERM_DOCUMENT_CF.name);
-
-        for(byte[] keySet : myMap.navigableKeySet()){          //nu știu ce este exact in chei
-            System.out.println("~~~~>>>"+Bytes.toString(keySet));
+        Get get = new Get(toBytes(name));
+        get.addColumn(TERM_DOCUMENT_CF.name, AVRO_QUALIFIER.name);
+        HTable hTable = null;
+        try {
+            hTable = new HTable(config, SEGMENTS.name);
+            Result result = hTable.get(get);
+            NavigableMap<byte[], byte[]> myMap = result.getFamilyMap(TERM_DOCUMENT_CF.name);
+            if (myMap != null) { //index does not exist
+                byte[] value = myMap.get(AVRO_QUALIFIER.name);
+                b = value;
+            }
+        } catch (IOException ioe) {
+            System.err.print("Exception while computing the size of the bytes to be read from the HTable!");
+        } finally {
+            try {
+                hTable.close();
+            } catch (IOException ioe) {
+                //do nothing
+            }
         }
-        b=myMap.get(Bytes.toBytes("contents"));
     }
 }
