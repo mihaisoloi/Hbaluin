@@ -3,4 +3,5 @@
 /.classpath
 /.project
 .metadata
+.idea
 LuceneTest.iml
