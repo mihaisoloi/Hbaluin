@@ -236,7 +236,8 @@ public class HBaseDirectory extends Directory implements Serializable {
         private final String name;
         private byte[] fileContents = new byte[0];
         private boolean STREAM_STATE_OPEN = false;
-        private int pointerInBuffer = -1;
+        //        private long bufferStart = 0;   // position in file of buffer
+        private int bufferPosition = 0; // position in buffer
 
         public HIndexOutput(String name) {
             this.name = checkNotNull(name);
@@ -244,22 +245,29 @@ public class HBaseDirectory extends Directory implements Serializable {
         }
 
         @Override
-        public void flush() throws IOException {
+        public void writeByte(byte b) throws IOException {
             checkState(STREAM_STATE_OPEN);
-            HTable table = null;
-            try {
-                table = new HTable(config, SEGMENTS_TABLE.name);
-                Put put = new Put(Bytes.toBytes(name));
-                LOG.info("Bytes in put {}", Bytes.toString(fileContents));
-                put.add(TERM_DOCUMENT_CF.name, CONTENTS_QUALIFIER.name, fileContents);
-                table.put(put);
-                LOG.info("Writing to HBase {}", put.toJSON());
-            } catch (IOException e) {
-                LOG.info("Exception flushing file to HBase", e);
-                Throwables.propagate(e);
-            } finally {
-                Closeables.closeQuietly(table);
-            }
+            if (bufferPosition == fileContents.length) {
+                fileContents = Bytes.add(fileContents, new byte[]{b});
+                System.out.println(name + "~~~~" + fileContents + "~~~~~~" + fileContents.length);
+                bufferPosition++;
+                if (bufferPosition == 26 && "_0.tis".equals(name))
+                    System.out.println("TEST");
+            } else
+                fileContents[bufferPosition++] = b;
+        }
+
+
+        /**
+         * we copy all of the bytes from the file and write it all when we close the stream
+         */
+        @Override
+        public void writeBytes(byte[] b, int offset, int length) throws IOException {
+            checkState(STREAM_STATE_OPEN);
+            checkPositionIndex(offset, b.length);
+
+            fileContents = Bytes.add(fileContents, Arrays.copyOfRange(b,offset,length));
+            bufferPosition += length;
         }
 
         @Override
@@ -272,14 +280,15 @@ public class HBaseDirectory extends Directory implements Serializable {
         @Override
         public long getFilePointer() {
             checkState(STREAM_STATE_OPEN);
-            return pointerInBuffer < 0 ? 0 : pointerInBuffer;
+            return bufferPosition;
         }
 
         @Override
         public void seek(long pos) throws IOException {
+            System.out.println(name + "~~~~>>" + fileContents + ">>~~~~~~" + fileContents.length);
             checkState(STREAM_STATE_OPEN);
             checkPositionIndex((int) pos, fileContents.length);
-            pointerInBuffer = (int) pos;
+            bufferPosition = (int) pos;
         }
 
         @Override
@@ -288,42 +297,36 @@ public class HBaseDirectory extends Directory implements Serializable {
             return fileContents.length;
         }
 
+        /**
+         * Forces any buffered output to be written.
+         */
         @Override
-        public void writeByte(byte b) throws IOException {
-            checkState(STREAM_STATE_OPEN);
-            if (pointerInBuffer == fileContents.length) {
-                fileContents = Bytes.add(fileContents, new byte[]{b});
-            } else {
-                pointerInBuffer = pointerInBuffer < 0 ? 0 : pointerInBuffer;
-                fileContents[((int) pointerInBuffer++)] = b;
-            }
+        public void flush() throws IOException {
+            flushBuffer(fileContents, bufferPosition);
+            bufferPosition = 0;
         }
 
-        @Override
-        public void writeBytes(byte[] b, int offset, int length) throws IOException {
+        private void flushBuffer(byte[] b, int len) throws IOException {
+            flushBuffer(b, 0, len);
+        }
+
+        protected void flushBuffer(byte[] b, int offset, int len) throws IOException {
             checkState(STREAM_STATE_OPEN);
-            checkPositionIndex(offset, fileContents.length);
-            // overwriting bytes
-            pointerInBuffer++;
-            if (fileContents.length < offset + b.length) {
-                fileContents = Bytes.add(Arrays.copyOfRange(fileContents, 0, offset), b);
-            } else {
-                // if the bytes left are not enough till the end, we copy what is left over
-                while (length > 0) {
-                    int remainInBuffer = fileContents.length - pointerInBuffer;
-                    int bytesToCopy = length < remainInBuffer ? length : remainInBuffer;
-                    System.arraycopy(b, offset, fileContents, pointerInBuffer, bytesToCopy);
-                    offset += bytesToCopy;
-                    length -= bytesToCopy;
-                    pointerInBuffer += bytesToCopy;
-                }
-//                byte[] a = Arrays.copyOfRange(fileContents, 0, offset);
-//                byte[] c = Arrays.copyOfRange(fileContents, offset + b.length, length);
-//                fileContents = Bytes.add(a, b, c);
-//                        Arrays.copyOfRange(fileContents, 0, offset),
-//                        b,
-//                        Arrays.copyOfRange(fileContents, offset + length-1, length)
-//                );
+            HTable table = null;
+
+            try {
+                table = new HTable(config, SEGMENTS_TABLE.name);
+                Put put = new Put(Bytes.toBytes(name));
+                LOG.info("Bytes in put {}", Bytes.toString(fileContents));
+                put.add(TERM_DOCUMENT_CF.name, CONTENTS_QUALIFIER.name, fileContents);
+                table.put(put);
+                table.flushCommits();
+                LOG.info("Writing to HBase {}", put.toJSON());
+            } catch (IOException e) {
+                LOG.info("Exception flushing file to HBase", e);
+                Throwables.propagate(e);
+            } finally {
+                Closeables.closeQuietly(table);
             }
         }
     }
@@ -350,7 +353,7 @@ public class HBaseDirectory extends Directory implements Serializable {
                 } else {
                     // get the bytes from the column we store them in
                     fileContents = result.getValue(TERM_DOCUMENT_CF.name, CONTENTS_QUALIFIER.name);
-                    LOG.info("Read from HBase: ", Bytes.toString(fileContents));
+                    LOG.info("Read from HBase {} ", Bytes.toString(fileContents));
                     STREAM_STATE_OPEN = true;
                 }
             } catch (IOException e) {

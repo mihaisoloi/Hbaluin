@@ -24,6 +24,7 @@ import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.lucene.store.IndexInput;
 import org.apache.lucene.store.IndexOutput;
+import org.junit.Ignore;
 import org.junit.Test;
 
 import static org.apache.hadoop.hbase.util.Bytes.toBytes;
@@ -37,31 +38,37 @@ public class HBaseDirectoryTest extends HBaseSetup {
 
 
     @Test
+    @Ignore
     public void testListAll() throws Exception {
 
     }
 
     @Test
+    @Ignore
     public void testFileExists() throws Exception {
 
     }
 
     @Test
+    @Ignore
     public void testFileModified() throws Exception {
 
     }
 
     @Test
+    @Ignore
     public void testTouchFile() throws Exception {
 
     }
 
     @Test
+    @Ignore
     public void testDeleteFile() throws Exception {
 
     }
 
     @Test
+    @Ignore
     public void testFileLength() throws Exception {
 
     }
@@ -87,7 +94,7 @@ public class HBaseDirectoryTest extends HBaseSetup {
         byte[] fileBytes = result.getValue(TERM_DOCUMENT_CF.name, CONTENTS_QUALIFIER.name);
         hTable.close();
 
-        assertEquals("Files are equal", fileContents, Bytes.toString(fileBytes));
+        assertEquals("Files are not equal", fileContents, Bytes.toString(fileBytes));
     }
 
     @Test
@@ -109,6 +116,7 @@ public class HBaseDirectoryTest extends HBaseSetup {
     }
 
     @Test
+    @Ignore
     public void testClose() throws Exception {
 
     }

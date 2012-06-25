@@ -37,7 +37,6 @@ import org.apache.lucene.search.Query;
 import org.apache.lucene.search.TermQuery;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.LockObtainFailedException;
-import org.apache.lucene.store.RAMDirectory;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -65,7 +64,7 @@ public class IndexingTest extends HBaseSetup{
             Document doc = new Document();
             doc.add(new Field("id", ids[i], Store.YES, Index.NOT_ANALYZED));
             doc.add(new Field("country", unindexed[i], Store.YES, Index.NO));
-            doc.add(new Field("contents", unstored[i], Store.YES, Index.ANALYZED));
+            doc.add(new Field("contents", unstored[i], Store.NO, Index.ANALYZED));
             doc.add(new Field("city", text[i], Store.YES, Index.ANALYZED));
             writer.addDocument(doc);
         }
