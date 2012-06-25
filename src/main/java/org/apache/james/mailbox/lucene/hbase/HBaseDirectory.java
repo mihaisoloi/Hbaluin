@@ -97,7 +97,7 @@ public class HBaseDirectory extends Directory implements Serializable {
         try {
             table = new HTable(config, SEGMENTS_TABLE.name);
             Scan scan = new Scan();
-            // nu ne intereseaza doar valoarea rândului == rokey, asa aducem toate coloanele
+            // this way we're getting all of the columns
             scan.addFamily(TERM_DOCUMENT_CF.name);
             scanner = table.getScanner(scan);
             Result result;
@@ -236,7 +236,6 @@ public class HBaseDirectory extends Directory implements Serializable {
         private final String name;
         private byte[] fileContents = new byte[0];
         private boolean STREAM_STATE_OPEN = false;
-        //        private long bufferStart = 0;   // position in file of buffer
         private int bufferPosition = 0; // position in buffer
 
         public HIndexOutput(String name) {
@@ -249,10 +248,7 @@ public class HBaseDirectory extends Directory implements Serializable {
             checkState(STREAM_STATE_OPEN);
             if (bufferPosition == fileContents.length) {
                 fileContents = Bytes.add(fileContents, new byte[]{b});
-                System.out.println(name + "~~~~" + fileContents + "~~~~~~" + fileContents.length);
                 bufferPosition++;
-                if (bufferPosition == 26 && "_0.tis".equals(name))
-                    System.out.println("TEST");
             } else
                 fileContents[bufferPosition++] = b;
         }
@@ -285,7 +281,6 @@ public class HBaseDirectory extends Directory implements Serializable {
 
         @Override
         public void seek(long pos) throws IOException {
-            System.out.println(name + "~~~~>>" + fileContents + ">>~~~~~~" + fileContents.length);
             checkState(STREAM_STATE_OPEN);
             checkPositionIndex((int) pos, fileContents.length);
             bufferPosition = (int) pos;
@@ -313,11 +308,10 @@ public class HBaseDirectory extends Directory implements Serializable {
         protected void flushBuffer(byte[] b, int offset, int len) throws IOException {
             checkState(STREAM_STATE_OPEN);
             HTable table = null;
-
             try {
                 table = new HTable(config, SEGMENTS_TABLE.name);
                 Put put = new Put(Bytes.toBytes(name));
-                LOG.info("Bytes in put {}", Bytes.toString(fileContents));
+                LOG.info("Bytes in put {}", Arrays.toString(fileContents));
                 put.add(TERM_DOCUMENT_CF.name, CONTENTS_QUALIFIER.name, fileContents);
                 table.put(put);
                 table.flushCommits();
@@ -353,7 +347,7 @@ public class HBaseDirectory extends Directory implements Serializable {
                 } else {
                     // get the bytes from the column we store them in
                     fileContents = result.getValue(TERM_DOCUMENT_CF.name, CONTENTS_QUALIFIER.name);
-                    LOG.info("Read from HBase {} ", Bytes.toString(fileContents));
+                    LOG.info("Read from HBase {} ", Arrays.toString(fileContents));
                     STREAM_STATE_OPEN = true;
                 }
             } catch (IOException e) {
@@ -400,6 +394,7 @@ public class HBaseDirectory extends Directory implements Serializable {
         public void readBytes(byte[] b, int offset, int len) throws IOException {
             checkState(STREAM_STATE_OPEN);
             Bytes.putBytes(b, 0, fileContents, offset, len);
+            pointerInBuffer+=len;
         }
     }
 }
