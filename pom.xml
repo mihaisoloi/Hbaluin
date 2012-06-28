@@ -16,11 +16,44 @@
             </plugin>
         </plugins>
     </build>
+    <repositories>
+        <repository>
+            <id>lucene-solr-jenkins-trunk</id>
+            <name>Lucene/Solr Jenkins trunk</name>
+            <url>https://builds.apache.org/job/Lucene-Solr-Maven-trunk/lastSuccessfulBuild/artifact/maven_artifacts</url>
+            <!--<url>https://repository.apache.org/content/repositories/snapshots/org/apache/lucene/</url>-->
+            <layout>default</layout>
+            <releases>
+                <enabled>false</enabled>
+            </releases>
+            <snapshots>
+                <enabled>true</enabled>
+            </snapshots>
+        </repository>
+    </repositories>
+    <properties>
+        <lucene.version>4.0-SNAPSHOT</lucene.version>
+    </properties>
     <dependencies>
         <dependency>
             <groupId>org.apache.lucene</groupId>
             <artifactId>lucene-core</artifactId>
-            <version>3.6.0</version>
+            <version>${lucene.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.lucene</groupId>
+            <artifactId>lucene-analyzers-common</artifactId>
+            <version>${lucene.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.lucene</groupId>
+            <artifactId>lucene-queryparser</artifactId>
+            <version>${lucene.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.lucene</groupId>
+            <artifactId>lucene-misc</artifactId>
+            <version>${lucene.version}</version>
         </dependency>
         <dependency>
             <groupId>junit</groupId>

@@ -24,16 +24,14 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.*;
 import org.apache.hadoop.hbase.client.*;
 import org.apache.hadoop.hbase.util.Bytes;
-import org.apache.lucene.store.Directory;
-import org.apache.lucene.store.IndexInput;
-import org.apache.lucene.store.IndexOutput;
-import org.apache.lucene.store.SingleInstanceLockFactory;
+import org.apache.lucene.store.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.Serializable;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.List;
 
 import static com.google.common.base.Preconditions.*;
@@ -76,7 +74,7 @@ public class HBaseDirectory extends Directory implements Serializable {
         }
 
         try {
-            setLockFactory(new SingleInstanceLockFactory());
+            setLockFactory(NoLockFactory.getNoLockFactory());
         } catch (IOException e) {
             // Cannot happen
         }
@@ -142,32 +140,6 @@ public class HBaseDirectory extends Directory implements Serializable {
     }
 
     /**
-     * Returns the time the named file was last modified.
-     *
-     * @throws IOException if the file does not exist
-     */
-    @Override
-    @Deprecated
-    public long fileModified(String name) throws IOException {
-        checkState(DIRECTORY_STATE_OPEN);
-        return 0L;
-    }
-
-    /**
-     * Set the modified time of an existing file to now.
-     *
-     * @throws IOException if the file does not exist
-     * @deprecated Lucene never uses this API; it will be
-     *             removed in 4.0.
-     */
-    @Override
-    @Deprecated
-    public void touchFile(String name) throws IOException {
-        checkState(DIRECTORY_STATE_OPEN);
-        // use checkAndPut() on a column if needed.
-    }
-
-    /**
      * Removes an existing file in the directory.
      *
      * @throws IOException if the file does not exist
@@ -205,19 +177,30 @@ public class HBaseDirectory extends Directory implements Serializable {
     }
 
     /**
-     * Creates a new, empty file in the directory with the given name. Returns a stream writing this file.
+     * Creates a new, empty file in the directory with the given name.
+     * Returns a stream writing this file.
      */
     @Override
-    public IndexOutput createOutput(String name) throws IOException {
+    public IndexOutput createOutput(String name, IOContext context) throws IOException {
         checkState(DIRECTORY_STATE_OPEN);
         return new HIndexOutput(name);
     }
 
+    @Override
+    public void sync(Collection<String> names) throws IOException {
+        //TODO: implement sync for commit action
+    }
+
     /**
-     * Returns a stream reading an existing file.
+     * Returns a stream reading an existing file, with the
+     * specified read buffer size.  The particular Directory
+     * implementation may ignore the buffer size.  Currently
+     * the only Directory implementations that respect this
+     * parameter are {@link org.apache.lucene.store.FSDirectory} and {@link
+     * org.apache.lucene.store.CompoundFileDirectory}.
      */
     @Override
-    public IndexInput openInput(String name) throws IOException {
+    public IndexInput openInput(String name, IOContext context) throws IOException {
         checkState(DIRECTORY_STATE_OPEN);
         return new HIndexInput(name);
     }
@@ -246,24 +229,24 @@ public class HBaseDirectory extends Directory implements Serializable {
         @Override
         public void writeByte(byte b) throws IOException {
             checkState(STREAM_STATE_OPEN);
-            if (bufferPosition == fileContents.length) {
+            if (bufferPosition == fileContents.length) { //add new byte
                 fileContents = Bytes.add(fileContents, new byte[]{b});
-                bufferPosition++;
-            } else
+                bufferPosition = fileContents.length;
+            } else //overwriting
                 fileContents[bufferPosition++] = b;
         }
 
 
         /**
-         * we copy all of the bytes from the file and write it all when we close the stream
+         * we copy the bytes from the buffer and write it to the end of the file
          */
         @Override
         public void writeBytes(byte[] b, int offset, int length) throws IOException {
             checkState(STREAM_STATE_OPEN);
             checkPositionIndex(offset, b.length);
 
-            fileContents = Bytes.add(fileContents, Arrays.copyOfRange(b,offset,length));
-            bufferPosition += length;
+            fileContents = Bytes.add(fileContents, Arrays.copyOfRange(b, offset, length));
+            bufferPosition = fileContents.length;
         }
 
         @Override
@@ -297,15 +280,6 @@ public class HBaseDirectory extends Directory implements Serializable {
          */
         @Override
         public void flush() throws IOException {
-            flushBuffer(fileContents, bufferPosition);
-            bufferPosition = 0;
-        }
-
-        private void flushBuffer(byte[] b, int len) throws IOException {
-            flushBuffer(b, 0, len);
-        }
-
-        protected void flushBuffer(byte[] b, int offset, int len) throws IOException {
             checkState(STREAM_STATE_OPEN);
             HTable table = null;
             try {
@@ -321,19 +295,19 @@ public class HBaseDirectory extends Directory implements Serializable {
                 Throwables.propagate(e);
             } finally {
                 Closeables.closeQuietly(table);
+                bufferPosition = 0;
             }
         }
     }
 
     protected class HIndexInput extends IndexInput {
-        private String name;
         // we read the whole segment in memory in this array
         private byte[] fileContents;
         private boolean STREAM_STATE_OPEN = false;
-        private long pointerInBuffer = 0;
+        private int pointerInBuffer = 0;
 
         private HIndexInput(String name) {
-            this.name = checkNotNull(name);
+            super(name);
             HTable table = null;
             try {
                 table = new HTable(config, SEGMENTS_TABLE.name);
@@ -374,7 +348,7 @@ public class HBaseDirectory extends Directory implements Serializable {
         @Override
         public void seek(long pos) throws IOException {
             checkState(STREAM_STATE_OPEN);
-            pointerInBuffer = pos;
+            pointerInBuffer = (int) pos;
         }
 
         @Override
@@ -386,15 +360,16 @@ public class HBaseDirectory extends Directory implements Serializable {
         @Override
         public byte readByte() throws IOException {
             if (STREAM_STATE_OPEN)
-                return fileContents[((int) pointerInBuffer++)];
+                return fileContents[pointerInBuffer++];
             return 'b';
         }
 
         @Override
         public void readBytes(byte[] b, int offset, int len) throws IOException {
             checkState(STREAM_STATE_OPEN);
-            Bytes.putBytes(b, 0, fileContents, offset, len);
-            pointerInBuffer+=len;
+            checkPositionIndex(pointerInBuffer+len,fileContents.length);
+            Bytes.putBytes(b, offset, fileContents, pointerInBuffer, len);
+            pointerInBuffer += len;
         }
     }
 }

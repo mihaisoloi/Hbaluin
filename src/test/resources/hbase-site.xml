@@ -48,11 +48,11 @@
 
     <property>
         <name>zookeeper.session.timeout</name>
-        <value>2000000</value>
+        <value>20000</value>
     </property>
     <property>
         <name>hbase.zookeeper.property.tickTime</name>
-        <value>100000</value>
+        <value>1000</value>
     </property>
 
 </configuration>

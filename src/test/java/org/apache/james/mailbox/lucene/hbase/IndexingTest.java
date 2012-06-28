@@ -17,23 +17,23 @@
 
 package org.apache.james.mailbox.lucene.hbase;
 
-import org.apache.lucene.analysis.WhitespaceAnalyzer;
+import com.google.common.io.Closeables;
+import org.apache.lucene.analysis.core.WhitespaceAnalyzer;
 import org.apache.lucene.document.Document;
-import org.apache.lucene.document.Field;
-import org.apache.lucene.document.Field.Index;
 import org.apache.lucene.document.Field.Store;
+import org.apache.lucene.document.StringField;
+import org.apache.lucene.document.TextField;
 import org.apache.lucene.index.*;
-import org.apache.lucene.search.IndexSearcher;
-import org.apache.lucene.search.Query;
-import org.apache.lucene.search.TermQuery;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.LockObtainFailedException;
+import org.apache.lucene.store.SimpleFSDirectory;
 import org.junit.Before;
 import org.junit.Test;
 
+import java.io.File;
 import java.io.IOException;
 
-import static org.apache.lucene.util.Version.LUCENE_36;
+import static org.apache.lucene.util.Version.LUCENE_40;
 import static org.junit.Assert.assertEquals;
 
 public class IndexingTest extends HBaseSetup {
@@ -43,6 +43,7 @@ public class IndexingTest extends HBaseSetup {
             "Venice has lots of canals"};
     protected String[] text = {"Amsterdam", "Venice"};
     private Directory directory;
+    private IndexWriter writer;
 
     /**
      * setting up the test class
@@ -54,17 +55,16 @@ public class IndexingTest extends HBaseSetup {
         super.setUp();
         directory = new HBaseDirectory(CLUSTER.getConf());
 //        directory = new SimpleFSDirectory(new File("/home/msoloi/indexes"));
-        IndexWriter writer = getWriter();
 
+        writer = getWriter();
         for (int i = 0; i < ids.length; i++) {
             Document doc = new Document();
-            doc.add(new Field("id", ids[i], Store.YES, Index.NOT_ANALYZED));
-            doc.add(new Field("country", unindexed[i], Store.YES, Index.NO));
-            doc.add(new Field("contents", unstored[i], Store.NO, Index.ANALYZED));
-            doc.add(new Field("city", text[i], Store.YES, Index.ANALYZED));
+            doc.add(new StringField("id", ids[i], Store.YES));
+            doc.add(new StringField("country", unindexed[i], Store.YES));
+            doc.add(new StringField("city", text[i], Store.YES));
+            doc.add(new TextField("contents", unstored[i], Store.NO));
             writer.addDocument(doc);
         }
-        writer.close();
     }
 
     /**
@@ -75,10 +75,9 @@ public class IndexingTest extends HBaseSetup {
      * @throws LockObtainFailedException
      * @throws IOException
      */
-    private IndexWriter getWriter() throws CorruptIndexException,
-            LockObtainFailedException, IOException {
-        IndexWriterConfig conf = new IndexWriterConfig(LUCENE_36,
-                new WhitespaceAnalyzer(LUCENE_36));
+    private IndexWriter getWriter() throws IOException {
+        IndexWriterConfig conf = new IndexWriterConfig(LUCENE_40,
+                new WhitespaceAnalyzer(LUCENE_40));
         return new IndexWriter(directory, conf);
     }
 
@@ -89,27 +88,8 @@ public class IndexingTest extends HBaseSetup {
      * @throws CorruptIndexException
      * @throws IOException
      */
-    private IndexReader getReader() throws CorruptIndexException, IOException {
-        return IndexReader.open(directory);
-    }
-
-    /**
-     * returns the number of hits for the searched string
-     *
-     * @param fieldName
-     * @param searchString
-     * @return
-     * @throws IOException
-     */
-    protected int getHitCount(String fieldName, String searchString)
-            throws IOException {
-        IndexSearcher searcher = new IndexSearcher(getReader());
-        Term t = new Term(fieldName, searchString);
-        Query query = new TermQuery(t);
-        // int hitCount = TestUtil.hitCount(searcher, query);
-        searcher.close();
-        // return hitCount;
-        return 0;
+    private IndexReader getReader() throws IOException {
+        return DirectoryReader.open(directory);
     }
 
     /**
@@ -119,8 +99,7 @@ public class IndexingTest extends HBaseSetup {
      * @throws IOException
      */
     @Test
-    public void testIndexWriter() throws CorruptIndexException, IOException {
-        IndexWriter writer = getWriter();
+    public void testIndexWriter() throws IOException {
         assertEquals(ids.length, writer.numDocs());
         writer.close();
     }
@@ -133,7 +112,7 @@ public class IndexingTest extends HBaseSetup {
     @Test
     public void testIndexReader() throws IOException {
         IndexReader reader = getReader();
-//        assertEquals(ids.length, reader.maxDoc());
+        assertEquals(ids.length, reader.maxDoc());
         assertEquals(ids.length, reader.numDocs());
         reader.close();
     }

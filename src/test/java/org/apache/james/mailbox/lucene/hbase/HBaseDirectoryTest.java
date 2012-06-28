@@ -22,6 +22,7 @@ import org.apache.hadoop.hbase.client.HTable;
 import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.util.Bytes;
+import org.apache.lucene.store.IOContext;
 import org.apache.lucene.store.IndexInput;
 import org.apache.lucene.store.IndexOutput;
 import org.junit.Ignore;
@@ -82,7 +83,7 @@ public class HBaseDirectoryTest extends HBaseSetup {
 
         HBaseDirectory directory = new HBaseDirectory(CLUSTER.getConf());
         LOG.info("Created directory");
-        IndexOutput io = directory.createOutput(fileName);
+        IndexOutput io = directory.createOutput(fileName, IOContext.DEFAULT);
         io.writeBytes(bytesToWrite, bytesToWrite.length);
         io.close();
         LOG.info("Wrote the file, checking if it exists");
@@ -108,7 +109,7 @@ public class HBaseDirectoryTest extends HBaseSetup {
         hTable.flushCommits();
         LOG.info("Wrote the file, checking if it exists");
 
-        IndexInput indexInput = directory.openInput(fileName);
+        IndexInput indexInput = directory.openInput(fileName,IOContext.READ);
         byte[] fileBytes = new byte[(int) indexInput.length()];
         indexInput.readBytes(fileBytes, 0, fileBytes.length);
 
