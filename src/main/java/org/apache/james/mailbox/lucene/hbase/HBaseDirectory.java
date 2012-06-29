@@ -43,9 +43,6 @@ public class HBaseDirectory extends Directory implements Serializable {
     private boolean DIRECTORY_STATE_OPEN = false;
     private final Configuration config;
 
-    /**
-     * Use constructor chaining this way !!
-     */
     public HBaseDirectory() {
         this(HBaseConfiguration.create());
     }
@@ -80,12 +77,6 @@ public class HBaseDirectory extends Directory implements Serializable {
         }
     }
 
-    /**
-     * Files are rows in HBase: list == Scan.
-     *
-     * @return
-     * @throws IOException
-     */
     @Override
     public String[] listAll() throws IOException {
         checkState(DIRECTORY_STATE_OPEN);
@@ -112,13 +103,6 @@ public class HBaseDirectory extends Directory implements Serializable {
         return files.toArray(new String[files.size()]);
     }
 
-    /**
-     * looking for a certain segment file
-     *
-     * @param name
-     * @return
-     * @throws IOException
-     */
     @Override
     public boolean fileExists(String name) throws IOException {
         checkState(DIRECTORY_STATE_OPEN);
@@ -139,11 +123,6 @@ public class HBaseDirectory extends Directory implements Serializable {
         return true;
     }
 
-    /**
-     * Removes an existing file in the directory.
-     *
-     * @throws IOException if the file does not exist
-     */
     @Override
     public void deleteFile(String name) throws IOException {
         checkState(DIRECTORY_STATE_OPEN);
@@ -161,11 +140,6 @@ public class HBaseDirectory extends Directory implements Serializable {
         }
     }
 
-    /**
-     * Returns the length in bytes of a file in the directory.
-     *
-     * @throws IOException if the file does not exist
-     */
     @Override
     public final long fileLength(String name) throws IOException {
         checkState(DIRECTORY_STATE_OPEN);
@@ -176,10 +150,6 @@ public class HBaseDirectory extends Directory implements Serializable {
         return len;
     }
 
-    /**
-     * Creates a new, empty file in the directory with the given name.
-     * Returns a stream writing this file.
-     */
     @Override
     public IndexOutput createOutput(String name, IOContext context) throws IOException {
         checkState(DIRECTORY_STATE_OPEN);
@@ -191,14 +161,6 @@ public class HBaseDirectory extends Directory implements Serializable {
         //TODO: implement sync for commit action
     }
 
-    /**
-     * Returns a stream reading an existing file, with the
-     * specified read buffer size.  The particular Directory
-     * implementation may ignore the buffer size.  Currently
-     * the only Directory implementations that respect this
-     * parameter are {@link org.apache.lucene.store.FSDirectory} and {@link
-     * org.apache.lucene.store.CompoundFileDirectory}.
-     */
     @Override
     public IndexInput openInput(String name, IOContext context) throws IOException {
         checkState(DIRECTORY_STATE_OPEN);

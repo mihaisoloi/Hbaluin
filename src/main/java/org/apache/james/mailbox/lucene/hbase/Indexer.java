@@ -21,65 +21,41 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
-import org.apache.lucene.index.*;
-import org.apache.lucene.store.Directory;
-import org.apache.lucene.store.FSDirectory;
+import org.apache.lucene.document.StringField;
+import org.apache.lucene.document.TextField;
+import org.apache.lucene.index.IndexWriter;
+import org.apache.lucene.index.IndexWriterConfig;
+import org.apache.lucene.index.NoMergePolicy;
+import org.apache.lucene.index.TieredMergePolicy;
 
 import java.io.File;
 import java.io.FileFilter;
 import java.io.FileReader;
 import java.io.IOException;
 
-import static org.apache.lucene.util.Version.LUCENE_36;
+import static org.apache.lucene.util.Version.LUCENE_40;
 
 public class Indexer {
     private final IndexWriter writer;
     public final HBaseDirectory dir;
 
-    /*public Indexer(String indexDir) throws IOException {
-        dir= FSDirectory.open(new File(indexDir));
-        writer = new IndexWriter(dir, createConfig(true));
-    }*/
-
     public Indexer(Configuration conf) throws IOException {
         dir = new HBaseDirectory(conf);
-        writer = new IndexWriter(dir, createConfig(true));
+        writer = new IndexWriter(dir, createConfig(false, true));
     }
 
-    private IndexWriterConfig createConfig(boolean defaultMerge) {
-        IndexWriterConfig config = new IndexWriterConfig(LUCENE_36,
-                new StandardAnalyzer(LUCENE_36));
+    private IndexWriterConfig createConfig(boolean doMerge, boolean defaultMerge) {
+        IndexWriterConfig config = new IndexWriterConfig(LUCENE_40,
+                new StandardAnalyzer(LUCENE_40));
         //the default merge policy for LUCENE_32 and above is TieredMergePolicy
         //which already has useCompoundFile set to true
-//        if (defaultMerge)
-//            ((TieredMergePolicy) config.getMergePolicy()).setNoCFSRatio(1.0);
-//        else
-//            config.setMergePolicy(NoMergePolicy.COMPOUND_FILES);
+        if (doMerge)
+            if (defaultMerge)
+                ((TieredMergePolicy) config.getMergePolicy()).setNoCFSRatio(1.0);
+            else
+                config.setMergePolicy(NoMergePolicy.COMPOUND_FILES);
 
         return config;
-    }
-
-    public static void main(String[] args) throws IOException {
-        if (args.length != 2) {
-            throw new IllegalArgumentException("Usage: java "
-                    + Indexer.class.getName() + " <index dir> <data dir>");
-        }
-        //where the index is going to be written to
-        String indexDir = args[0];
-        //where the files to be indexed are located
-        String dataDir = args[1];
-
-        long start = System.currentTimeMillis();
-        /*Indexer indexer = new Indexer(indexDir);
-        int numIndexed;
-        try {
-            numIndexed = indexer.index(dataDir, new TextFilesFilter());
-        } finally {
-            indexer.close();
-        }
-        long end = System.currentTimeMillis();
-        System.out.println("Indexing " + numIndexed + " files took "
-                + (end - start) + "milliseconds");*/
     }
 
     public int index(String dataDir, TextFilesFilter filter)
@@ -98,11 +74,9 @@ public class Indexer {
 
     protected Document getDocument(File f) throws IOException {
         Document doc = new Document();
-        doc.add(new Field("contents", new FileReader(f)));
-        doc.add(new Field("filename", f.getName(), Field.Store.YES,
-                Field.Index.NOT_ANALYZED));
-        doc.add(new Field("fullpath", f.getCanonicalPath(), Field.Store.YES,
-                Field.Index.NOT_ANALYZED));
+        doc.add(new TextField("contents", new FileReader(f), Field.Store.NO));
+        doc.add(new StringField("filename", f.getName(), Field.Store.YES));
+        doc.add(new StringField("fullpath", f.getCanonicalPath(), Field.Store.YES));
         return doc;
     }
 

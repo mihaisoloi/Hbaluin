@@ -17,7 +17,6 @@
 
 package org.apache.james.mailbox.lucene.hbase;
 
-import com.google.common.io.Closeables;
 import org.apache.lucene.analysis.core.WhitespaceAnalyzer;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field.Store;
@@ -26,7 +25,6 @@ import org.apache.lucene.document.TextField;
 import org.apache.lucene.index.*;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.LockObtainFailedException;
-import org.apache.lucene.store.SimpleFSDirectory;
 import org.junit.Before;
 import org.junit.Test;
 

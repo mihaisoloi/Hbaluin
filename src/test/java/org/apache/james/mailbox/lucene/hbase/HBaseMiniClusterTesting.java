@@ -34,29 +34,25 @@ import org.apache.hadoop.hbase.avro.AvroUtil;
 import org.apache.hadoop.hbase.avro.generated.AClusterStatus;
 import org.apache.hadoop.hbase.client.*;
 import org.apache.hadoop.hbase.util.Bytes;
-import org.apache.hadoop.io.IOUtils;
 import org.apache.james.mailbox.lucene.avro.AvroUtils;
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.apache.lucene.document.Document;
+import org.apache.lucene.index.DirectoryReader;
 import org.apache.lucene.index.IndexReader;
-import org.apache.lucene.queryParser.ParseException;
-import org.apache.lucene.queryParser.QueryParser;
+import org.apache.lucene.queryparser.classic.ParseException;
+import org.apache.lucene.queryparser.classic.QueryParser;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.TopDocs;
-import org.junit.After;
-import org.junit.Before;
 import org.junit.Test;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.io.*;
 import java.util.NavigableMap;
 
 import static org.apache.hadoop.hbase.util.Bytes.toBytes;
 import static org.apache.james.mailbox.lucene.hbase.HBaseNames.*;
-import static org.apache.lucene.util.Version.LUCENE_36;
+import static org.apache.lucene.util.Version.LUCENE_40;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
@@ -151,7 +147,7 @@ public class HBaseMiniClusterTesting extends HBaseSetup {
     @Test
     public void insertSegmentsIntoColumns() throws IOException, ParseException {
         //indexing the text files and inserting the segments into the HBase cluster
-        String dataDir = "LuceneTest/resources/main/data";
+        String dataDir = System.getProperty("user.home")+"/indexes/data";
         Indexer indexer = new Indexer(CLUSTER.getConf());
         int numFileIndexed;
         try {
@@ -161,11 +157,11 @@ public class HBaseMiniClusterTesting extends HBaseSetup {
             indexer.close();
         }
 
-        IndexReader reader = IndexReader.open(indexer.dir);
+        IndexReader reader = DirectoryReader.open(indexer.dir);
         IndexSearcher is = new IndexSearcher(reader);
 
-        QueryParser parser = new QueryParser(LUCENE_36, "contents",
-                new StandardAnalyzer(LUCENE_36));
+        QueryParser parser = new QueryParser(LUCENE_40, "contents",
+                new StandardAnalyzer(LUCENE_40));
         Query query = parser.parse("apache");
 
 
