@@ -52,7 +52,6 @@ public class IndexingTest extends HBaseSetup {
     public void setUp() throws IOException {
         super.setUp();
         directory = new HBaseDirectory(CLUSTER.getConf());
-//        directory = new SimpleFSDirectory(new File("/home/msoloi/indexes"));
 
         writer = getWriter();
         for (int i = 0; i < ids.length; i++) {

@@ -45,6 +45,7 @@ import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.TopDocs;
+import org.junit.Ignore;
 import org.junit.Test;
 
 import java.io.*;
@@ -59,6 +60,7 @@ import static org.junit.Assert.assertTrue;
 public class HBaseMiniClusterTesting extends HBaseSetup {
 
     @Test
+    @Ignore
     public void insertDataIntoHBaseNodes() throws IOException {
         assertTrue(admin.tableExists(INDEX_TABLE.name));
         HTableDescriptor htd = admin.getTableDescriptor(INDEX_TABLE.name);
@@ -66,6 +68,7 @@ public class HBaseMiniClusterTesting extends HBaseSetup {
     }
 
     @Test
+    @Ignore
     public void insertValuesIntoColumns() throws IOException {
         HTable htable = new HTable(CLUSTER.getConf(), INDEX_TABLE.name);
         Put put = new Put(toBytes("mihai"));
@@ -85,6 +88,7 @@ public class HBaseMiniClusterTesting extends HBaseSetup {
     }
 
     @Test
+    @Ignore
     public void testAvroHBaseIntegration() throws IOException {
         ClusterStatus cs = admin.getClusterStatus();
         assertEquals(1, cs.getServersSize());
@@ -93,6 +97,7 @@ public class HBaseMiniClusterTesting extends HBaseSetup {
     }
 
     @Test
+    @Ignore
     public void insertAvroBLOBIntoColumns() throws IOException {
         //constructing the avro blob
         Schema termDocument = AvroUtils
@@ -145,13 +150,12 @@ public class HBaseMiniClusterTesting extends HBaseSetup {
     }
 
     @Test
-    public void insertSegmentsIntoColumns() throws IOException, ParseException {
+    public void searchFromHBase() throws IOException, ParseException {
         //indexing the text files and inserting the segments into the HBase cluster
-        String dataDir = System.getProperty("user.home")+"/indexes/data";
         Indexer indexer = new Indexer(CLUSTER.getConf());
         int numFileIndexed;
         try {
-            numFileIndexed = indexer.index(dataDir, new Indexer.TextFilesFilter());
+            numFileIndexed = indexer.index("src/test/resources/data", new Indexer.TextFilesFilter());
             System.out.println("Number of files indexed and stored in HBase: "+numFileIndexed);
         } finally {
             indexer.close();
