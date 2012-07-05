@@ -43,6 +43,10 @@ public class HBaseDirectory extends Directory implements Serializable {
     private boolean DIRECTORY_STATE_OPEN = false;
     private final Configuration config;
 
+    public Configuration getConfig() {
+        return config;
+    }
+
     public HBaseDirectory() {
         this(HBaseConfiguration.create());
     }

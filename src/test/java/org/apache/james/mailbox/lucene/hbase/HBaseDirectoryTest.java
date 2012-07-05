@@ -17,6 +17,7 @@
 
 package org.apache.james.mailbox.lucene.hbase;
 
+import org.apache.hadoop.hbase.HBaseConfiguration;
 import org.apache.hadoop.hbase.client.Get;
 import org.apache.hadoop.hbase.client.HTable;
 import org.apache.hadoop.hbase.client.Put;
@@ -27,6 +28,8 @@ import org.apache.lucene.store.IndexInput;
 import org.apache.lucene.store.IndexOutput;
 import org.junit.Ignore;
 import org.junit.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import static org.apache.hadoop.hbase.util.Bytes.toBytes;
 import static org.junit.Assert.assertEquals;
@@ -35,8 +38,13 @@ import static org.apache.james.mailbox.lucene.hbase.HBaseNames.SEGMENTS_TABLE;
 import static org.apache.james.mailbox.lucene.hbase.HBaseNames.TERM_DOCUMENT_CF;
 import static org.apache.james.mailbox.lucene.hbase.HBaseNames.CONTENTS_QUALIFIER;
 
-public class HBaseDirectoryTest extends HBaseSetup {
+/**
+ * test supposes that HBase is already started in pseudo-distributed mode
+ */
 
+public class HBaseDirectoryTest /*extends HBaseSetup*/ {
+
+    private static final Logger LOG = LoggerFactory.getLogger(HBaseDirectoryTest.class);
 
     @Test
     @Ignore
@@ -81,14 +89,14 @@ public class HBaseDirectoryTest extends HBaseSetup {
     @Test
     public void testCreateOutput() throws Exception {
 
-        HBaseDirectory directory = new HBaseDirectory(CLUSTER.getConf());
+        HBaseDirectory directory = new HBaseDirectory();
         LOG.info("Created directory");
         IndexOutput io = directory.createOutput(fileName, IOContext.DEFAULT);
         io.writeBytes(bytesToWrite, bytesToWrite.length);
         io.close();
         LOG.info("Wrote the file, checking if it exists");
 
-        HTable hTable = new HTable(CLUSTER.getConf(), SEGMENTS_TABLE.name);
+        HTable hTable = new HTable(directory.getConfig(), SEGMENTS_TABLE.name);
         Get get = new Get(toBytes(fileName));
         get.addColumn(TERM_DOCUMENT_CF.name, CONTENTS_QUALIFIER.name);
         Result result = hTable.get(get);
@@ -100,9 +108,9 @@ public class HBaseDirectoryTest extends HBaseSetup {
 
     @Test
     public void testOpenInput() throws Exception {
-        HBaseDirectory directory = new HBaseDirectory(CLUSTER.getConf());
+        HBaseDirectory directory = new HBaseDirectory();
         LOG.info("Created directory");
-        HTable hTable = new HTable(CLUSTER.getConf(), SEGMENTS_TABLE.name);
+        HTable hTable = new HTable(directory.getConfig(), SEGMENTS_TABLE.name);
         Put put = new Put(toBytes(fileName));
         put.add(TERM_DOCUMENT_CF.name, CONTENTS_QUALIFIER.name, bytesToWrite);
         hTable.put(put);
