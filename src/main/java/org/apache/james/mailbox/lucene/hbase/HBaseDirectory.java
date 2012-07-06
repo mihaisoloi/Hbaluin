@@ -254,11 +254,11 @@ public class HBaseDirectory extends Directory implements Serializable {
             try {
                 table = new HTable(config, SEGMENTS_TABLE.name);
                 Put put = new Put(Bytes.toBytes(name));
-                LOG.info("Bytes in put {}", Arrays.toString(fileContents));
+//                LOG.info("Bytes in put {}", Arrays.toString(fileContents));
                 put.add(TERM_DOCUMENT_CF.name, CONTENTS_QUALIFIER.name, fileContents);
                 table.put(put);
                 table.flushCommits();
-                LOG.info("Writing to HBase {}", put.toJSON());
+//                LOG.info("Writing to HBase {}", put.toJSON());
             } catch (IOException e) {
                 LOG.info("Exception flushing file to HBase", e);
                 Throwables.propagate(e);
@@ -290,7 +290,7 @@ public class HBaseDirectory extends Directory implements Serializable {
                 } else {
                     // get the bytes from the column we store them in
                     fileContents = result.getValue(TERM_DOCUMENT_CF.name, CONTENTS_QUALIFIER.name);
-                    LOG.info("Read from HBase {} ", Arrays.toString(fileContents));
+//                    LOG.info("Read from HBase {} ", Arrays.toString(fileContents));
                     STREAM_STATE_OPEN = true;
                 }
             } catch (IOException e) {
@@ -328,8 +328,10 @@ public class HBaseDirectory extends Directory implements Serializable {
 
         @Override
         public byte readByte() throws IOException {
-            if (STREAM_STATE_OPEN)
+            if (STREAM_STATE_OPEN){
+                checkPositionIndex(pointerInBuffer, fileContents.length);
                 return fileContents[pointerInBuffer++];
+            }
             return 'b';
         }
 
