@@ -57,9 +57,9 @@ import static org.apache.lucene.util.Version.LUCENE_40;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
-public class HBaseMiniClusterTesting extends HBaseSetup {
+public class HBaseMiniClusterTesting /*extends HBaseSetup*/ {
 
-    @Test
+    /*@Test
     @Ignore
     public void insertDataIntoHBaseNodes() throws IOException {
         assertTrue(admin.tableExists(INDEX_TABLE.name));
@@ -147,12 +147,12 @@ public class HBaseMiniClusterTesting extends HBaseSetup {
         }
         IoUtils.close(inputStream);
         IoUtils.close(outputStream);
-    }
+    }*/
 
     @Test
     public void searchFromHBase() throws IOException, ParseException {
         //indexing the text files and inserting the segments into the HBase cluster
-        Indexer indexer = new Indexer(CLUSTER.getConf());
+        Indexer indexer = new Indexer();
         int numFileIndexed;
         try {
             numFileIndexed = indexer.index("src/test/resources/data", new Indexer.TextFilesFilter());

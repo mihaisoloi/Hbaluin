@@ -35,7 +35,7 @@ import java.io.IOException;
 import static org.apache.lucene.util.Version.LUCENE_40;
 import static org.junit.Assert.assertEquals;
 
-public class IndexingTest /*extends HBaseSetup*/ {
+public class IndexingTest {
     protected static final String[] ids = {"1", "2"};
     protected static final String[] unindexed = {"Netherlands", "Italy"};
     protected static final String[] unstored = {"Amsterdam has lots of bridges",
@@ -51,8 +51,7 @@ public class IndexingTest /*extends HBaseSetup*/ {
      */
     @BeforeClass
     public static void setUp() throws IOException {
-//        super.setUp();
-        directory = new HBaseDirectory(/*CLUSTER.getConf()*/);
+        directory = new HBaseDirectory();
 
         writer = getWriter();
         for (int i = 0; i < ids.length; i++) {
@@ -63,7 +62,7 @@ public class IndexingTest /*extends HBaseSetup*/ {
             doc.add(new TextField("contents", unstored[i], Store.NO));
             writer.addDocument(doc);
         }
-//        writer.commit();
+        writer.close();
     }
 
     /**
@@ -99,6 +98,7 @@ public class IndexingTest /*extends HBaseSetup*/ {
      */
     @Test
     public void testIndexWriter() throws IOException {
+        IndexWriter writer = getWriter();
         assertEquals(ids.length, writer.numDocs());
         writer.close(true);
     }
