@@ -26,6 +26,7 @@ import org.apache.lucene.index.*;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.LockObtainFailedException;
 import org.junit.Before;
+import org.junit.BeforeClass;
 import org.junit.Test;
 
 import java.io.File;
@@ -35,21 +36,21 @@ import static org.apache.lucene.util.Version.LUCENE_40;
 import static org.junit.Assert.assertEquals;
 
 public class IndexingTest /*extends HBaseSetup*/ {
-    protected String[] ids = {"1", "2"};
-    protected String[] unindexed = {"Netherlands", "Italy"};
-    protected String[] unstored = {"Amsterdam has lots of bridges",
+    protected static final String[] ids = {"1", "2"};
+    protected static final String[] unindexed = {"Netherlands", "Italy"};
+    protected static final String[] unstored = {"Amsterdam has lots of bridges",
             "Venice has lots of canals"};
-    protected String[] text = {"Amsterdam", "Venice"};
-    private Directory directory;
-    private IndexWriter writer;
+    protected static final String[] text = {"Amsterdam", "Venice"};
+    private static Directory directory;
+    private static IndexWriter writer;
 
     /**
      * setting up the test class
      *
      * @throws java.lang.Exception
      */
-    @Before
-    public void setUp() throws IOException {
+    @BeforeClass
+    public static void setUp() throws IOException {
 //        super.setUp();
         directory = new HBaseDirectory(/*CLUSTER.getConf()*/);
 
@@ -73,7 +74,7 @@ public class IndexingTest /*extends HBaseSetup*/ {
      * @throws LockObtainFailedException
      * @throws IOException
      */
-    private IndexWriter getWriter() throws IOException {
+    private static IndexWriter getWriter() throws IOException {
         IndexWriterConfig conf = new IndexWriterConfig(LUCENE_40,
                 new WhitespaceAnalyzer(LUCENE_40));
         return new IndexWriter(directory, conf);

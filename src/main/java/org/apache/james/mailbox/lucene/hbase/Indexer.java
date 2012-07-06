@@ -40,7 +40,7 @@ public class Indexer {
     public final HBaseDirectory dir;
 
     public Indexer(Configuration conf) throws IOException {
-        dir = new HBaseDirectory(conf);
+        dir = new HBaseDirectory();
         writer = new IndexWriter(dir, createConfig(false, true));
     }
 

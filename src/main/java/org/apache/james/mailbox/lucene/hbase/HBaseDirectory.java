@@ -64,12 +64,15 @@ public class HBaseDirectory extends Directory implements Serializable {
         }
 
         try {
-            if (!admin.tableExists(SEGMENTS_TABLE.name)) {
-                HTableDescriptor tableDescriptor = new HTableDescriptor(SEGMENTS_TABLE.name);
-                HColumnDescriptor columnDescriptor = new HColumnDescriptor(TERM_DOCUMENT_CF.name);
-                tableDescriptor.addFamily(columnDescriptor);
-                admin.createTable(tableDescriptor);
+            if (admin.tableExists(SEGMENTS_TABLE.name)){ //deleting previous data
+                admin.disableTable(SEGMENTS_TABLE.name);
+                admin.deleteTable(SEGMENTS_TABLE.name);
             }
+
+            HTableDescriptor tableDescriptor = new HTableDescriptor(SEGMENTS_TABLE.name);
+            HColumnDescriptor columnDescriptor = new HColumnDescriptor(TERM_DOCUMENT_CF.name);
+            tableDescriptor.addFamily(columnDescriptor);
+            admin.createTable(tableDescriptor);
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -333,7 +336,7 @@ public class HBaseDirectory extends Directory implements Serializable {
         @Override
         public void readBytes(byte[] b, int offset, int len) throws IOException {
             checkState(STREAM_STATE_OPEN);
-            checkPositionIndex(pointerInBuffer+len,fileContents.length);
+            checkPositionIndex(pointerInBuffer + len, fileContents.length);
             Bytes.putBytes(b, offset, fileContents, pointerInBuffer, len);
             pointerInBuffer += len;
         }
