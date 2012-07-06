@@ -29,6 +29,6 @@ In order to run the tests from Lucene using the HBaseDirectory implementation in
 
      <fileset file="lib/HBaluin-0.0.2-SNAPSHOT-jar-with-dependencies.jar"/>
 
-  4. Run using ant: 
+  4. Run using ant from lucene-solr/lucene/:
 
      ant test-core -Dtests.directory=org.apache.james.mailbox.lucene.hbase.HBaseDirectory
