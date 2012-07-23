@@ -7,6 +7,7 @@ import org.apache.hadoop.hbase.client.HBaseAdmin;
 import org.apache.hadoop.hbase.client.HTable;
 import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.util.Bytes;
+import org.apache.lucene.codecs.TermStats;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.index.IndexableField;
 
@@ -40,9 +41,11 @@ public class MemoryIndexWriter {
         try {
             table = new HTable(fs.getConf(), HBaseNames.INDEX_TABLE.name);
             Put put = new Put(Bytes.toBytes(doc.get(HBaseNames.FILE_NAME.name())));
+
             for (IndexableField field : doc.getFields()) {
                 // family=mailboxID, qualifier = numele term-ului,value = document positions/ frequency --> should be TermDocument
                 put.add(column, Bytes.toBytes(field.name()), Bytes.toBytes(1));
+
             }
             table.put(put);
         } finally {

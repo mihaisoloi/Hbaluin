@@ -17,39 +17,95 @@
 
 package org.apache.james.mailbox.lucene.hbase.index;
 
-import org.apache.james.mailbox.lucene.hbase.HBaseDirectory;
-import org.apache.lucene.index.IndexWriter;
-
+import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
 /**
- * contains a TermDocument for every term
+ * contains a list of TermDocuments for every document ID
  */
 public class TermDocuments {
 
-    private Map<String,TermDocument> documentMap;
+    private Map<String, List<TermDocument>> documentMap;
 
-    public TermDocuments(Map<String, TermDocument> documentMap) {
+    public TermDocuments(Map<String, List<TermDocument>> documentMap) {
         this.documentMap = documentMap;
     }
 
-    public int getTermFrequency(String term){
-
-        return documentMap.get(term).getDocFrequency();
+    /**
+     * counts the total frequency of the term in all of the documents
+     *
+     * @param term
+     * @return totalFrequency
+     */
+    public int getTermFrequency(String term) {
+        int i = 0;
+        for (String key : documentMap.keySet()) {
+            if (key.equals(term))
+                for (TermDocument termDocument : documentMap.get(key)) {
+                    i += termDocument.getDocFrequency();
+                }
+        }
+        return i;
     }
 
     /**
-     * it's here that the indexing happens
+     * adding documents to the existing terms or creating new terms in new documents
      *
+     * @param term that can be found with the frequency and position in the docs
      * @param doc
      */
-    public void addDocument(String term, TermDocument doc){
-        documentMap.put(term,doc);
+    public void addDocument(String term, TermDocument doc) {
+        if (documentMap.get(term) != null)
+            documentMap.get(term).add(doc);
+        else {
+            List<TermDocument> termDocuments = new ArrayList<TermDocument>();
+            termDocuments.add(doc);
+            documentMap.put(term, termDocuments);
+        }
     }
 
     /**
+     * remove documents from all of the terms
      *
-     *
+     * @param documents
      */
+    public void removeDocuments(List<TermDocument> documents) {
+        for (TermDocument document : documents) {
+            removeDocument(document);
+        }
+    }
+
+    /**
+     * remove document from all of the terms
+     *
+     * @param document
+     */
+    public void removeDocument(TermDocument document) {
+        for (String key : documentMap.keySet()) {
+            if (documentMap.get(key).contains(document)) {
+                documentMap.remove(document);
+            }
+        }
+    }
+
+    public TermDocument getDocument(String term, TermDocument document) {
+        return null;
+    }
+
+    public Iterator<TermDocument> getDocumentIterator(String term){
+        return documentMap.get(term).iterator();
+    }
+
+    public List<TermDocument> getDocuments(String term){
+        return documentMap.get(term);
+    }
+
+    @Override
+    public String toString() {
+        return "TermDocuments{" +
+                "documentMap=" + documentMap +
+                '}';
+    }
 }
