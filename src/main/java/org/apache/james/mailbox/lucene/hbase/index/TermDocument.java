@@ -15,22 +15,37 @@
  * limitations under the License.                                             *
  ******************************************************************************/
 
-package org.apache.james.mailbox.lucene.hbase;
+package org.apache.james.mailbox.lucene.hbase.index;
 
-import org.apache.hadoop.hbase.util.Bytes;
+import java.util.Arrays;
 
-public enum HBaseNames {
-    INDEX_TABLE("INDEX"), COLUMN_FAMILY("F"), TERM_DOCUMENT_CF("T"), SEGMENTS_TABLE("SEGMENTS"), CONTENTS_QUALIFIER("CONTENT"),
-    FILE_NAME("NAME"), FILE_CONTENT("CONTENT");
+/**
+ * contains the information to be stored in the index for a
+ * given document (i.e. document frequency and array of positions)
+ */
+public class TermDocument {
 
-    public final byte[] name;
+    private int docFrequency;
+    private int[] docPositions;
 
-    private HBaseNames(String name) {
-        this.name = Bytes.toBytes(name);
+    public TermDocument(int docFrequency, int[] docPositions) {
+        this.docFrequency = docFrequency;
+        this.docPositions = docPositions;
+    }
+
+    public int getDocFrequency() {
+        return docFrequency;
+    }
+
+    public int[] getDocPositions() {
+        return docPositions;
     }
 
     @Override
     public String toString() {
-        return Bytes.toString(name);
+        return "TermDocument{" +
+                "docFrequency=" + docFrequency +
+                ", docPositions=" + Arrays.toString(docPositions) +
+                '}';
     }
 }

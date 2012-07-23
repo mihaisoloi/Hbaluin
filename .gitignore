@@ -2,6 +2,7 @@
 /target
 /.classpath
 /.project
+/build
 .metadata
 .idea
 HBaluin.iml

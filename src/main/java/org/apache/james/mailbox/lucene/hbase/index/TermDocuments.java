@@ -15,22 +15,41 @@
  * limitations under the License.                                             *
  ******************************************************************************/
 
-package org.apache.james.mailbox.lucene.hbase;
+package org.apache.james.mailbox.lucene.hbase.index;
 
-import org.apache.hadoop.hbase.util.Bytes;
+import org.apache.james.mailbox.lucene.hbase.HBaseDirectory;
+import org.apache.lucene.index.IndexWriter;
 
-public enum HBaseNames {
-    INDEX_TABLE("INDEX"), COLUMN_FAMILY("F"), TERM_DOCUMENT_CF("T"), SEGMENTS_TABLE("SEGMENTS"), CONTENTS_QUALIFIER("CONTENT"),
-    FILE_NAME("NAME"), FILE_CONTENT("CONTENT");
+import java.util.List;
+import java.util.Map;
 
-    public final byte[] name;
+/**
+ * contains a TermDocument for every term
+ */
+public class TermDocuments {
 
-    private HBaseNames(String name) {
-        this.name = Bytes.toBytes(name);
+    private Map<String,TermDocument> documentMap;
+
+    public TermDocuments(Map<String, TermDocument> documentMap) {
+        this.documentMap = documentMap;
     }
 
-    @Override
-    public String toString() {
-        return Bytes.toString(name);
+    public int getTermFrequency(String term){
+
+        return documentMap.get(term).getDocFrequency();
     }
+
+    /**
+     * it's here that the indexing happens
+     *
+     * @param doc
+     */
+    public void addDocument(String term, TermDocument doc){
+        documentMap.put(term,doc);
+    }
+
+    /**
+     *
+     *
+     */
 }
