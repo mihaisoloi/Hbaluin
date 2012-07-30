@@ -17,7 +17,9 @@
 
 package org.apache.james.mailbox.lucene.hbase.index;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 
 /**
  * contains the information to be stored in the index for a
@@ -26,9 +28,9 @@ import java.util.Arrays;
 public class TermDocument {
 
     private int docFrequency;
-    private int[] docPositions;
+    private List<Integer> docPositions;
 
-    public TermDocument(int docFrequency, int[] docPositions) {
+    public TermDocument(int docFrequency, List<Integer> docPositions) {
         this.docFrequency = docFrequency;
         this.docPositions = docPositions;
     }
@@ -37,7 +39,7 @@ public class TermDocument {
         return docFrequency;
     }
 
-    public int[] getDocPositions() {
+    public List<Integer> getDocPositions() {
         return docPositions;
     }
 
@@ -45,7 +47,7 @@ public class TermDocument {
     public String toString() {
         return "TermDocument{" +
                 "docFrequency=" + docFrequency +
-                ", docPositions=" + Arrays.toString(docPositions) +
+                ", docPositions=" + Arrays.toString(docPositions.toArray()) +
                 '}';
     }
 }

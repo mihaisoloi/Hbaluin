@@ -90,9 +90,9 @@ public class TermDocuments {
         }
     }
 
-    public TermDocument getDocument(String term, TermDocument document) {
-        return null;
-    }
+//    public TermDocument getDocument(String term, TermDocument document) {
+//        return null;
+//    }
 
     public Iterator<TermDocument> getDocumentIterator(String term){
         return documentMap.get(term).iterator();

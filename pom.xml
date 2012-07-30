@@ -98,5 +98,10 @@
             <artifactId>hadoop-core</artifactId>
             <version>${hadoop.version}</version>
         </dependency>
+        <dependency>
+            <groupId>org.apache.james</groupId>
+            <artifactId>apache-james-mailbox-lucene</artifactId>
+            <version>0.5-SNAPSHOT</version>
+        </dependency>
     </dependencies>
 </project>
