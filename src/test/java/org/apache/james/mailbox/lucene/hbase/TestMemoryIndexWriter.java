@@ -17,7 +17,7 @@ import java.io.IOException;
 import static org.apache.james.mailbox.lucene.hbase.HBaseNames.*;
 import static org.junit.Assert.assertEquals;
 
-public class HBaseFileSearchIndexTest {
+public class TestMemoryIndexWriter {
 
     private static HBaseTestingUtility HTU = new HBaseTestingUtility();
     private static FileSystem fs;
