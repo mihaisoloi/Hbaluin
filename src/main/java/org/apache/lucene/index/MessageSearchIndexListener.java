@@ -2,9 +2,9 @@ package org.apache.lucene.index;
 
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
-import org.apache.hadoop.hbase.client.Delete;
-import org.apache.hadoop.hbase.client.Get;
 import org.apache.hadoop.hbase.client.Put;
+import org.apache.hadoop.hbase.client.Result;
+import org.apache.hadoop.hbase.client.ResultScanner;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.james.mailbox.MailboxSession;
 import org.apache.james.mailbox.exception.MailboxException;
@@ -41,7 +41,6 @@ import java.util.*;
 
 import static org.apache.james.mailbox.lucene.hbase.HBaseNames.COLUMN_FAMILY;
 import static org.apache.james.mailbox.lucene.hbase.HBaseNames.EMPTY_COLUMN_VALUE;
-import static org.apache.james.mailbox.lucene.hbase.HBaseNames.INDEX_TABLE;
 import static org.apache.lucene.index.MessageSearchIndexListener.Fields.*;
 
 public class MessageSearchIndexListener<UUID> extends ListeningMessageSearchIndex<UUID> {
@@ -107,8 +106,8 @@ public class MessageSearchIndexListener<UUID> extends ListeningMessageSearchInde
         try {
             store.storeMail(indexMessage(message));
         } catch (IOException e) {
-            LOG.warn("Problem adding the mail "+ message.getUid() + " in mailbox " + message.getMailboxId() + " to the storage!");
-        }  finally{
+            LOG.warn("Problem adding the mail " + message.getUid() + " in mailbox " + message.getMailboxId() + " to the storage!");
+        } finally {
             try {
                 store.flushToStore();
             } catch (IOException e) {
@@ -123,7 +122,7 @@ public class MessageSearchIndexListener<UUID> extends ListeningMessageSearchInde
         final long messageId = message.getUid();
         for (Map.Entry<Fields, String> entry : parseFullContent(message).entrySet()) {
             Put put = new Put(Bytes.add(uuidToBytes(MAILBOX_ID_FIELD), new byte[]{entry.getKey().id}, Bytes.toBytes(entry.getValue())));
-            put.add(COLUMN_FAMILY.name,Bytes.toBytes(messageId),EMPTY_COLUMN_VALUE.name);
+            put.add(COLUMN_FAMILY.name, Bytes.toBytes(messageId), EMPTY_COLUMN_VALUE.name);
             puts.add(put);
         }
         return puts;
@@ -143,9 +142,27 @@ public class MessageSearchIndexListener<UUID> extends ListeningMessageSearchInde
     public void delete(MailboxSession session, Mailbox<UUID> mailbox, MessageRange range) throws MailboxException {
         // delete a message from index - maybe just mark it in a list and perform the delete on HBase compactions
         Iterator<Long> messagesToBeDeleted = range.iterator();
-        while(messagesToBeDeleted.hasNext()){
+        while (messagesToBeDeleted.hasNext()) {
             final long messageId = messagesToBeDeleted.next();
-            store.retrieveMail();
+            ResultScanner scanner = null;
+            try {
+                scanner = store.retrieveMail(uuidToBytes((java.util.UUID) mailbox.getMailboxId()), messageId);
+            } catch (IOException e) {
+                LOG.warn("Couldn't retrieve mail from mailbox");
+            }
+            try {
+                for (Result result : scanner) {
+                    store.deleteMail(result.getRow(), messageId);
+                }
+            } catch (IOException e) {
+                LOG.warn("Couldn't delete mail from mailbox");
+            } finally {
+                try {
+                    store.flushToStore();
+                } catch (IOException e) {
+                    //do nothing
+                }
+            }
         }
     }
 

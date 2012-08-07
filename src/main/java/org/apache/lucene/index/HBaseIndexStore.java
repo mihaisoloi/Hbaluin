@@ -8,6 +8,7 @@ import org.apache.hadoop.hbase.filter.BinaryPrefixComparator;
 import org.apache.hadoop.hbase.filter.CompareFilter;
 import org.apache.hadoop.hbase.filter.RowFilter;
 import org.apache.hadoop.hbase.util.Bytes;
+import org.apache.james.mailbox.model.MessageRange;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -52,7 +53,7 @@ public class HBaseIndexStore {
 
     public Put persistTerm(String mailboxId, int docId, String field, byte[] term) throws IOException {
         //row = mailboxID - term
-        Put put = new Put(Bytes.add(Bytes.toBytes(mailboxId),Constants.SEPARATOR,term));
+        Put put = new Put(Bytes.add(Bytes.toBytes(mailboxId), Constants.SEPARATOR, term));
         // family=column_family, qualifier = documentID,value = fields
         put.add(COLUMN_FAMILY.name, Bytes.toBytes(docId), Bytes.toBytes(field));
         return put;
@@ -85,10 +86,13 @@ public class HBaseIndexStore {
         return table.getScanner(scan);
     }
 
-    public void deleteMail(List<Long> mailIds){
+    public void deleteMail(byte[] row,long messageId) throws IOException {
+        Delete delete = new Delete(row);
+        delete.deleteColumn(COLUMN_FAMILY.name,Bytes.toBytes(messageId));
+        table.delete(delete);
     }
 
-    public void flushToStore() throws IOException{
+    public void flushToStore() throws IOException {
         table.flushCommits();
     }
 }
