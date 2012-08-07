@@ -1,72 +1,81 @@
 package org.apache.lucene.index;
 
 import org.apache.hadoop.hbase.client.HTableInterface;
-import org.apache.hadoop.hbase.client.Put;
-import org.apache.hadoop.hbase.client.ResultScanner;
-import org.apache.hadoop.hbase.client.Scan;
-import org.apache.hadoop.hbase.filter.BinaryPrefixComparator;
-import org.apache.hadoop.hbase.filter.CompareFilter;
-import org.apache.hadoop.hbase.filter.RowFilter;
-import org.apache.hadoop.hbase.filter.SubstringComparator;
 import org.apache.hadoop.hbase.util.Bytes;
-import org.apache.james.mailbox.lucene.hbase.HBaseNames;
+import org.apache.lucene.analysis.Analyzer;
+import org.apache.lucene.analysis.NumericTokenStream;
+import org.apache.lucene.analysis.TokenStream;
+import org.apache.lucene.analysis.core.SimpleAnalyzer;
+import org.apache.lucene.analysis.tokenattributes.CharTermAttribute;
+import org.apache.lucene.document.Document;
+import org.apache.lucene.document.FieldType;
+import org.apache.lucene.util.Attribute;
+import org.apache.lucene.util.Version;
 
 import java.io.IOException;
-import java.util.List;
-import java.util.UUID;
+import java.io.StringReader;
 
-import static org.apache.james.mailbox.lucene.hbase.HBaseNames.COLUMN_FAMILY;
+import static org.apache.lucene.index.LuceneMessageSearchIndex.MAILBOX_ID_FIELD;
 
 /**
- * writes the rows in HBase
+ * scrie o instanta de Lucene Document in HBase
  */
 public class MemoryIndexWriter {
 
     private final HBaseIndexStore storage;
+    private final String primaryKey;
+    private final Analyzer analyzer;
 
-    public MemoryIndexWriter(HBaseIndexStore storage) throws IOException {
+    public MemoryIndexWriter(HBaseIndexStore storage, final String primaryKey) throws IOException {
 
         this.storage = storage;
+        this.primaryKey = primaryKey;
+        this.analyzer = new SimpleAnalyzer(Version.LUCENE_40);
     }
 
     /**
-     * writes the rows as puts in HBase where the qualifier is composed of the mailID
+     * writes the document as puts in HBase where the qualifier is composed of the documentId
+     * which in our case is the mailID
      *
-     * @param puts
+     * @param doc
      * @throws IOException
      */
-    public void storeMail(List<Put> puts) throws IOException {
+    public void addDocument(Document doc) throws IOException {
         HTableInterface table = storage.getTable();
-        for (Put put : puts) {
-            table.put(put);
+        int docId = doc.getField(this.primaryKey).numericValue().intValue();
+        try {
+            String mailboxId = doc.get(MAILBOX_ID_FIELD);
+            for (IndexableField field : doc.getFields()) {
+                FieldType fieldType= (FieldType) field.fieldType();
+                Class<? extends Attribute> attribute = null;
+                if (fieldType.numericType() == null) {
+                    attribute = CharTermAttribute.class;
+                }
+                TokenStream tokens = null;
+                try {
+                    tokens = field.tokenStream(analyzer);
+                    if (tokens == null)
+                        tokens = analyzer.tokenStream(field.name(), new StringReader(field.stringValue()));
+
+                    tokens.addAttribute(attribute);
+                    while (tokens.incrementToken()) {
+                        CharTermAttribute charTermAttribute = (CharTermAttribute) tokens.getAttribute(attribute);
+                        charTermAttribute.
+//                        storage.persistTerm(mailboxId, docId, field.name(),
+//                                fieldType.numericType() == null ?
+//                                        Bytes.toBytes(tokens.getAttribute(attribute).toString()) : Bytes.toBytes(field.numericValue().intValue()));
+                    }
+                    tokens.end();
+                } finally {
+                    tokens.close();
+                }
+            }
+        } finally {
+            table.flushCommits();
         }
-        table.close();
     }
 
-    /**
-     * retrieves specific mail from storage
-     *
-     * @param mailboxId
-     * @param messageId
-     */
-    public ResultScanner retrieveMail(byte[] mailboxId, long messageId) throws IOException {
-        HTableInterface table = storage.getTable();
-        Scan scan = new Scan();
-        scan.addColumn(COLUMN_FAMILY.name, Bytes.toBytes(messageId));
-        RowFilter filter = new RowFilter(CompareFilter.CompareOp.GREATER_OR_EQUAL,
-                new BinaryPrefixComparator(mailboxId));
-        scan.setFilter(filter);
-        return table.getScanner(scan);
-    }
+    public void updateDocument(Term term, Iterable<? extends IndexableField> doc) throws CorruptIndexException, IOException {
 
-    public void deleteMail(List<Long> mailIds){
-        HTableInterface table = storage.getTable();
     }
-
-    public void flushToStore() throws IOException{
-        HTableInterface table = storage.getTable();
-        table.flushCommits();
-        table.close();
-    }
-
 }

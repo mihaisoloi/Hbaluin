@@ -60,8 +60,7 @@ public class MessageSearchIndexListener<UUID> extends ListeningMessageSearchInde
         MIN_DATE = cal.getTime();
     }
 
-    private final MemoryIndexWriter writer;
-    private final MemoryIndexReader reader;
+    private final HBaseIndexStore store;
 
     private final static String MEDIA_TYPE_TEXT = "text";
     private final static String MEDIA_TYPE_MESSAGE = "message";
@@ -100,26 +99,18 @@ public class MessageSearchIndexListener<UUID> extends ListeningMessageSearchInde
 
     public MessageSearchIndexListener(MessageMapperFactory<UUID> factory, HBaseIndexStore store) throws IOException {
         super(factory);
-        this.writer = new MemoryIndexWriter(store);
-        this.reader = new MemoryIndexReader(store, INDEX_TABLE.toString());
+        this.store = store;
     }
-
-    public MessageSearchIndexListener(MessageMapperFactory<UUID> factory, MemoryIndexWriter writer, MemoryIndexReader reader) {
-        super(factory);
-        this.writer = writer;
-        this.reader = reader;
-    }
-
 
     @Override
     public void add(MailboxSession session, Mailbox<UUID> mailbox, Message<UUID> message) throws MailboxException {
         try {
-            writer.storeMail(indexMessage(message));
+            store.storeMail(indexMessage(message));
         } catch (IOException e) {
             LOG.warn("Problem adding the mail "+ message.getUid() + " in mailbox " + message.getMailboxId() + " to the storage!");
         }  finally{
             try {
-                writer.flushToStore();
+                store.flushToStore();
             } catch (IOException e) {
                 //nothing to do
             }
@@ -154,7 +145,7 @@ public class MessageSearchIndexListener<UUID> extends ListeningMessageSearchInde
         Iterator<Long> messagesToBeDeleted = range.iterator();
         while(messagesToBeDeleted.hasNext()){
             final long messageId = messagesToBeDeleted.next();
-            writer.retrieveMail()
+            store.retrieveMail();
         }
     }
 
