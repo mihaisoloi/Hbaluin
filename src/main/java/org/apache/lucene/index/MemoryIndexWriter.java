@@ -1,115 +1,72 @@
 package org.apache.lucene.index;
 
-import org.apache.hadoop.fs.FileSystem;
-import org.apache.hadoop.hbase.HColumnDescriptor;
-import org.apache.hadoop.hbase.HTableDescriptor;
-import org.apache.hadoop.hbase.client.HBaseAdmin;
-import org.apache.hadoop.hbase.client.HTable;
+import org.apache.hadoop.hbase.client.HTableInterface;
 import org.apache.hadoop.hbase.client.Put;
+import org.apache.hadoop.hbase.client.ResultScanner;
+import org.apache.hadoop.hbase.client.Scan;
+import org.apache.hadoop.hbase.filter.BinaryPrefixComparator;
+import org.apache.hadoop.hbase.filter.CompareFilter;
+import org.apache.hadoop.hbase.filter.RowFilter;
+import org.apache.hadoop.hbase.filter.SubstringComparator;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.james.mailbox.lucene.hbase.HBaseNames;
-import org.apache.lucene.analysis.Analyzer;
-import org.apache.lucene.analysis.NumericTokenStream;
-import org.apache.lucene.analysis.TokenStream;
-import org.apache.lucene.analysis.core.SimpleAnalyzer;
-import org.apache.lucene.analysis.tokenattributes.CharTermAttribute;
-import org.apache.lucene.document.Document;
-import org.apache.lucene.document.FieldType;
-import org.apache.lucene.util.Attribute;
-import org.apache.lucene.util.Version;
 
 import java.io.IOException;
-import java.io.StringReader;
-import java.util.HashSet;
-import java.util.Set;
-import java.util.StringTokenizer;
+import java.util.List;
+import java.util.UUID;
 
-import static org.apache.james.mailbox.lucene.hbase.HBaseNames.CONTENTS_QUALIFIER;
-import static org.apache.james.mailbox.lucene.hbase.HBaseNames.EMPTY_COLUMN_VALUE;
-import static org.apache.james.mailbox.lucene.hbase.HBaseNames.INDEX_TABLE;
+import static org.apache.james.mailbox.lucene.hbase.HBaseNames.COLUMN_FAMILY;
 
 /**
- * scrie o instanta de Lucene Document in HBase
+ * writes the rows in HBase
  */
 public class MemoryIndexWriter {
 
-    private FileSystem fs;
-    private byte[] column = HBaseNames.COLUMN_FAMILY.name;
-    private final String primaryKey;
-    private final Analyzer analyzer;
+    private final HBaseIndexStore storage;
 
-    public MemoryIndexWriter(FileSystem fs, HBaseAdmin admin, final String primaryKey) throws IOException {
-        this.fs = fs;
+    public MemoryIndexWriter(HBaseIndexStore storage) throws IOException {
 
-        HTableDescriptor htd = new HTableDescriptor(INDEX_TABLE.name);
-        if (!htd.hasFamily(column)) {
-            HColumnDescriptor columnDescriptor = new HColumnDescriptor(column);
-            htd.addFamily(columnDescriptor);
-        }
-        if (!admin.tableExists(INDEX_TABLE.name)) {
-            admin.createTable(htd);
-        }
-
-        this.primaryKey = primaryKey;
-        this.analyzer = new SimpleAnalyzer(Version.LUCENE_40);
+        this.storage = storage;
     }
 
     /**
-     * writes the document as puts in HBase where the qualifier is composed of the documentId
-     * which in our case is the mailID
+     * writes the rows as puts in HBase where the qualifier is composed of the mailID
      *
-     * @param doc
+     * @param puts
      * @throws IOException
      */
-    public void addDocument(Document doc) throws IOException {
-        HTable table = null;
-        int docId = doc.getField(this.primaryKey).numericValue().intValue();
-        try {
-            table = new HTable(fs.getConf(), INDEX_TABLE.name);
-
-            for (IndexableField field : doc.getFields()) {
-                FieldType fieldType = (FieldType) field.fieldType();
-                Class<? extends Attribute> attribute = null;
-                if (fieldType.numericType() != null) {
-                    attribute = NumericTokenStream.NumericTermAttribute.class;
-                } else {
-                    attribute = CharTermAttribute.class;
-                }
-                TokenStream tokens = field.tokenStream(analyzer);
-                if (tokens == null)
-                    tokens = analyzer.tokenStream(field.name(), new StringReader(field.stringValue()));
-
-                tokens.addAttribute(attribute);
-                while (tokens.incrementToken()) {
-                    String term = field.name() + "/" + tokens.getAttribute(attribute).toString();
-
-                    //row = document field/term
-                    Put put = new Put(Bytes.toBytes(docId + "-" + field.name() + "/" + term));
-
-                    // family=column_family, qualifier = mailbox uid,value = Term Documents
-                    put.add(column, CONTENTS_QUALIFIER.name, EMPTY_COLUMN_VALUE.name);
-                    table.put(put);
-                }
-                tokens.end();
-                tokens.close();
-            }
-        } finally {
-            table.flushCommits();
+    public void storeMail(List<Put> puts) throws IOException {
+        HTableInterface table = storage.getTable();
+        for (Put put : puts) {
+            table.put(put);
         }
+        table.close();
     }
 
     /**
-     * tokenizes the field and obtains the terms
+     * retrieves specific mail from storage
      *
-     * @param field
-     * @return
+     * @param mailboxId
+     * @param messageId
      */
-    private Set<Term> getTerms(IndexableField field) {
-        StringTokenizer tokenizer = new StringTokenizer(field.stringValue());
-        Set<Term> tokens = new HashSet<Term>();
-        while (tokenizer.hasMoreTokens())
-            tokens.add(new Term(tokenizer.nextToken()));
-        return tokens;
+    public ResultScanner retrieveMail(byte[] mailboxId, long messageId) throws IOException {
+        HTableInterface table = storage.getTable();
+        Scan scan = new Scan();
+        scan.addColumn(COLUMN_FAMILY.name, Bytes.toBytes(messageId));
+        RowFilter filter = new RowFilter(CompareFilter.CompareOp.GREATER_OR_EQUAL,
+                new BinaryPrefixComparator(mailboxId));
+        scan.setFilter(filter);
+        return table.getScanner(scan);
+    }
+
+    public void deleteMail(List<Long> mailIds){
+        HTableInterface table = storage.getTable();
+    }
+
+    public void flushToStore() throws IOException{
+        HTableInterface table = storage.getTable();
+        table.flushCommits();
+        table.close();
     }
 
 }
