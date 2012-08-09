@@ -1,9 +1,7 @@
 package org.apache.lucene.index;
 
 import org.apache.hadoop.hbase.client.HTableInterface;
-import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.lucene.analysis.Analyzer;
-import org.apache.lucene.analysis.NumericTokenStream;
 import org.apache.lucene.analysis.TokenStream;
 import org.apache.lucene.analysis.core.SimpleAnalyzer;
 import org.apache.lucene.analysis.tokenattributes.CharTermAttribute;
@@ -14,8 +12,6 @@ import org.apache.lucene.util.Version;
 
 import java.io.IOException;
 import java.io.StringReader;
-
-import static org.apache.lucene.index.LuceneMessageSearchIndex.MAILBOX_ID_FIELD;
 
 /**
  * scrie o instanta de Lucene Document in HBase
@@ -44,7 +40,7 @@ public class MemoryIndexWriter {
         HTableInterface table = storage.getTable();
         int docId = doc.getField(this.primaryKey).numericValue().intValue();
         try {
-            String mailboxId = doc.get(MAILBOX_ID_FIELD);
+//            String mailboxId = doc.get();
             for (IndexableField field : doc.getFields()) {
                 FieldType fieldType= (FieldType) field.fieldType();
                 Class<? extends Attribute> attribute = null;
@@ -60,7 +56,6 @@ public class MemoryIndexWriter {
                     tokens.addAttribute(attribute);
                     while (tokens.incrementToken()) {
                         CharTermAttribute charTermAttribute = (CharTermAttribute) tokens.getAttribute(attribute);
-                        charTermAttribute.
 //                        storage.persistTerm(mailboxId, docId, field.name(),
 //                                fieldType.numericType() == null ?
 //                                        Bytes.toBytes(tokens.getAttribute(attribute).toString()) : Bytes.toBytes(field.numericValue().intValue()));

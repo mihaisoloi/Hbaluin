@@ -24,7 +24,6 @@ import static org.apache.james.mailbox.lucene.hbase.HBaseNames.*;
 public class MemoryIndexReader extends AtomicReader {
 
     private final HBaseIndexStore store;
-    private final HTablePool tablePool;
     private final static Logger LOG = LoggerFactory.getLogger(MemoryIndexReader.class);
 
     public String getIndexName() {
@@ -39,7 +38,6 @@ public class MemoryIndexReader extends AtomicReader {
      */
     public MemoryIndexReader(final HBaseIndexStore store, final String indexName) {
         this.store = store;
-        this.tablePool = store.getTablePool();
         this.indexName = indexName;
     }
 
@@ -50,7 +48,7 @@ public class MemoryIndexReader extends AtomicReader {
 
     @Override
     public int numDocs() {
-        HTableInterface table = tablePool.getTable(indexName);
+        HTableInterface table = store.getTable();
         HashSet<Integer> documentSet = Sets.newHashSet();
         Scan scan = new Scan();
         scan.setMaxVersions(1);
@@ -80,7 +78,7 @@ public class MemoryIndexReader extends AtomicReader {
 
     @Override
     public void document(int docID, StoredFieldVisitor visitor) throws IOException {
-        HTableInterface table = tablePool.getTable(indexName);
+        HTableInterface table = store.getTable();
         Scan scan = new Scan();
         scan.addFamily(COLUMN_FAMILY.name);
 

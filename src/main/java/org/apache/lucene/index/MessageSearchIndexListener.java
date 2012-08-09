@@ -1,13 +1,15 @@
 package org.apache.lucene.index;
 
+import com.google.common.collect.ArrayListMultimap;
 import com.google.common.collect.Lists;
-import com.google.common.collect.Maps;
+import com.google.common.collect.Sets;
 import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.client.ResultScanner;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.james.mailbox.MailboxSession;
 import org.apache.james.mailbox.exception.MailboxException;
+import org.apache.james.mailbox.exception.UnsupportedSearchException;
 import org.apache.james.mailbox.model.MessageRange;
 import org.apache.james.mailbox.model.SearchQuery;
 import org.apache.james.mailbox.store.mail.MessageMapperFactory;
@@ -28,6 +30,11 @@ import org.apache.james.mime4j.parser.MimeStreamParser;
 import org.apache.james.mime4j.stream.BodyDescriptor;
 import org.apache.james.mime4j.stream.MimeConfig;
 import org.apache.james.mime4j.util.MimeUtil;
+import org.apache.lucene.analysis.Analyzer;
+import org.apache.lucene.analysis.TokenStream;
+import org.apache.lucene.analysis.core.SimpleAnalyzer;
+import org.apache.lucene.analysis.tokenattributes.CharTermAttribute;
+import org.apache.lucene.util.Version;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -41,9 +48,9 @@ import java.util.*;
 
 import static org.apache.james.mailbox.lucene.hbase.HBaseNames.COLUMN_FAMILY;
 import static org.apache.james.mailbox.lucene.hbase.HBaseNames.EMPTY_COLUMN_VALUE;
-import static org.apache.lucene.index.MessageSearchIndexListener.Fields.*;
+import static org.apache.lucene.index.MessageFields.*;
 
-public class MessageSearchIndexListener<UUID> extends ListeningMessageSearchIndex<UUID> {
+public class MessageSearchIndexListener extends ListeningMessageSearchIndex<UUID> {
 
     private final static Logger LOG = LoggerFactory.getLogger(MessageSearchIndexListener.class);
 
@@ -59,42 +66,10 @@ public class MessageSearchIndexListener<UUID> extends ListeningMessageSearchInde
         MIN_DATE = cal.getTime();
     }
 
-    private final HBaseIndexStore store;
-
     private final static String MEDIA_TYPE_TEXT = "text";
     private final static String MEDIA_TYPE_MESSAGE = "message";
     private final static String DEFAULT_ENCODING = "US-ASCII";
-
-    private java.util.UUID MAILBOX_ID_FIELD;
-
-    enum Fields {
-        UID_FIELD((byte) 1),
-        BODY_FIELD((byte) 2),
-        PREFIX_HEADER_FIELD((byte) 3),
-        HEADERS_FIELD((byte) 4),
-        TO_FIELD((byte) 5),
-        CC_FIELD((byte) 6),
-        FROM_FIELD((byte) 7),
-        BCC_FIELD((byte) 8),
-        BASE_SUBJECT_FIELD((byte) 9),
-        SENT_DATE_FIELD((byte) 10),
-        FIRST_FROM_MAILBOX_NAME_FIELD((byte) 11),
-        FIRST_TO_MAILBOX_NAME_FIELD((byte) 12),
-        FIRST_CC_MAILBOX_NAME_FIELD((byte) 13),
-        FIRST_FROM_MAILBOX_DISPLAY_FIELD((byte) 14),
-        FIRST_TO_MAILBOX_DISPLAY_FIELD((byte) 15);
-
-        public final byte id;
-
-        private Fields(byte id) {
-            this.id = id;
-        }
-
-        @Override
-        public String toString() {
-            return Integer.toString(id);
-        }
-    }
+    private HBaseIndexStore store;
 
     public MessageSearchIndexListener(MessageMapperFactory<UUID> factory, HBaseIndexStore store) throws IOException {
         super(factory);
@@ -118,10 +93,10 @@ public class MessageSearchIndexListener<UUID> extends ListeningMessageSearchInde
 
     private List<Put> indexMessage(Message<UUID> message) throws MailboxException {
         List<Put> puts = Lists.newArrayList();
-        MAILBOX_ID_FIELD = (java.util.UUID) message.getMailboxId();
+        UUID mailboxId = message.getMailboxId();
         final long messageId = message.getUid();
-        for (Map.Entry<Fields, String> entry : parseFullContent(message).entrySet()) {
-            Put put = new Put(Bytes.add(uuidToBytes(MAILBOX_ID_FIELD), new byte[]{entry.getKey().id}, Bytes.toBytes(entry.getValue())));
+        for (Map.Entry<MessageFields, String> entry : parseFullContent(message).entries()) {
+            Put put = new Put(Bytes.add(uuidToBytes(mailboxId), new byte[]{entry.getKey().id}, Bytes.toBytes(entry.getValue())));
             put.add(COLUMN_FAMILY.name, Bytes.toBytes(messageId), EMPTY_COLUMN_VALUE.name);
             puts.add(put);
         }
@@ -133,24 +108,31 @@ public class MessageSearchIndexListener<UUID> extends ListeningMessageSearchInde
                 Bytes.toBytes(uuid.getLeastSignificantBits()));
     }
 
-    public static final UUID rowToUUID(byte[] uuid) {
-        byte[] uuidz = Bytes.head(uuid, 16);
+    public static final UUID rowToUUID(byte[] row) {
+        byte[] uuidz = Bytes.head(row, 16);
         return new UUID(Bytes.toLong(Bytes.head(uuidz, 8)), Bytes.toLong(Bytes.tail(uuidz, 8)));
+    }
+
+    public static final MessageFields rowToField(byte[] row) {
+        byte[] fieldRead = Bytes.tail(Bytes.head(row, 17), 1);
+        for (MessageFields field : MessageFields.values())
+            if (field.id == fieldRead[0])
+                return field;
+        return MessageFields.NOT_FOUND;
+    }
+
+    public static String rowToTerm(byte[] row) {
+        byte[] term = Bytes.tail(row, row.length - 17);
+        return Bytes.toString(term);
     }
 
     @Override
     public void delete(MailboxSession session, Mailbox<UUID> mailbox, MessageRange range) throws MailboxException {
         // delete a message from index - maybe just mark it in a list and perform the delete on HBase compactions
-        Iterator<Long> messagesToBeDeleted = range.iterator();
-        while (messagesToBeDeleted.hasNext()) {
-            final long messageId = messagesToBeDeleted.next();
+        for (Long messageId : range) {
             ResultScanner scanner = null;
             try {
-                scanner = store.retrieveMail(uuidToBytes((java.util.UUID) mailbox.getMailboxId()), messageId);
-            } catch (IOException e) {
-                LOG.warn("Couldn't retrieve mail from mailbox");
-            }
-            try {
+                scanner = store.retrieveMails(uuidToBytes(mailbox.getMailboxId()), messageId);
                 for (Result result : scanner) {
                     store.deleteMail(result.getRow(), messageId);
                 }
@@ -159,6 +141,41 @@ public class MessageSearchIndexListener<UUID> extends ListeningMessageSearchInde
             } finally {
                 try {
                     store.flushToStore();
+                    scanner.close();
+                } catch (IOException e) {
+                    //do nothing
+                }
+            }
+        }
+    }
+
+
+    /**
+     * all previous flags are deleted upon update
+     *
+     * @param session
+     * @param mailbox
+     * @param range
+     * @param flags
+     * @throws MailboxException
+     */
+    @Override
+    public void update(MailboxSession session, Mailbox<UUID> mailbox, MessageRange range, Flags flags) throws MailboxException {
+        // update the cells that changed - this means update the flags (and maybe other metadata).
+        // message body and headers are immutable so they do not change
+        for (Long messageId : range) {
+            ResultScanner scanner = null;
+            try {
+                scanner = store.retrieveMails(uuidToBytes(mailbox.getMailboxId()), messageId);
+                for (Result result : scanner) {
+                    store.updateFlags(result.getRow(), messageId, flags);
+                }
+            } catch (IOException e) {
+                LOG.warn("Couldn't retrieve mail from mailbox");
+            } finally {
+                try {
+                    store.flushToStore();
+                    scanner.close();
                 } catch (IOException e) {
                     //do nothing
                 }
@@ -167,19 +184,57 @@ public class MessageSearchIndexListener<UUID> extends ListeningMessageSearchInde
     }
 
     @Override
-    public void update(MailboxSession session, Mailbox<UUID> mailbox, MessageRange range, Flags flags) throws MailboxException {
-        // update the cells that changed - this means update the flags (and maybe other metadata).
-        // message body and headers are immutable so they do not change
-    }
-
-    @Override
     public Iterator<Long> search(MailboxSession session, Mailbox<UUID> mailbox, SearchQuery searchQuery) throws MailboxException {
         // return a list of search results
-        return null;
+        Set<Long> uids = Sets.newLinkedHashSet();
+        ArrayListMultimap<MessageFields, String> queries = ArrayListMultimap.create();
+        for (SearchQuery.Criterion criterion : searchQuery.getCriterias()) {
+            queries.putAll(createQuery(criterion));
+        }
+        ResultScanner scanner = null;
+
+        try {
+            scanner = store.retrieveMails(uuidToBytes(mailbox.getMailboxId()), queries);
+            for (Result result : scanner)
+                for (byte[] qualifier : result.getFamilyMap(COLUMN_FAMILY.name).keySet())
+                    uids.add(Bytes.toLong(qualifier));
+        } catch (IOException e) {
+            LOG.warn("Couldn't search through mailbox");
+        }
+        return uids.iterator();
     }
 
-    private EnumMap<Fields, String> parseFullContent(final Message<UUID> message) throws MailboxException {
-        final EnumMap<Fields, String> map = Maps.newEnumMap(Fields.class);
+    /**
+     * Return a query which is built based on the given {@link org.apache.james.mailbox.model.SearchQuery.Criterion}
+     *
+     * @param criterion
+     * @return query
+     * @throws org.apache.james.mailbox.exception.UnsupportedSearchException
+     *
+     */
+    private ArrayListMultimap<MessageFields, String> createQuery(SearchQuery.Criterion criterion) throws UnsupportedSearchException, MailboxException {
+        if (criterion instanceof SearchQuery.TextCriterion)
+            return createTextQuery((SearchQuery.TextCriterion) criterion);
+        throw new UnsupportedSearchException();
+    }
+
+    public ArrayListMultimap<MessageFields, String> createTextQuery(SearchQuery.TextCriterion crit) {
+        String value = crit.getOperator().getValue().toUpperCase(Locale.ENGLISH);
+        ArrayListMultimap<MessageFields, String> textQuery = ArrayListMultimap.create();
+        switch (crit.getType()) {
+            case BODY:
+                textQuery.put(BODY_FIELD, value);
+                break;
+            case FULL:
+                textQuery.put(BODY_FIELD, value);
+                textQuery.put(HEADERS_FIELD, value);
+                break;
+        }
+        return textQuery;
+    }
+
+    private ArrayListMultimap<MessageFields, String> parseFullContent(final Message<UUID> message) throws MailboxException {
+        final ArrayListMultimap<MessageFields, String> map = ArrayListMultimap.create();
 
         // content handler which will index the headers and the body of the message
         SimpleContentHandler handler = new SimpleContentHandler() {
@@ -201,7 +256,7 @@ public class MessageSearchIndexListener<UUID> extends ListeningMessageSearchInde
                     map.put(HEADERS_FIELD, fullValue);
                     map.put(PREFIX_HEADER_FIELD, headerValue);
 
-                    Fields field = null;
+                    MessageFields field = null;
                     if ("To".equalsIgnoreCase(headerName)) {
                         field = TO_FIELD;
                     } else if ("From".equalsIgnoreCase(headerName)) {
@@ -304,9 +359,17 @@ public class MessageSearchIndexListener<UUID> extends ListeningMessageSearchInde
 
                     // Read the content one line after the other and add it to the document
                     BufferedReader bodyReader = new BufferedReader(new InputStreamReader(in, charset));
-                    String line = null;
-                    while ((line = bodyReader.readLine()) != null) {
-                        map.put(BODY_FIELD, line.toUpperCase(Locale.ENGLISH));
+                    TokenStream tokens = null;
+                    try {
+                        tokens = new SimpleAnalyzer(Version.LUCENE_40).tokenStream(BODY_FIELD.name(), bodyReader);
+                        Class<CharTermAttribute> attribute = CharTermAttribute.class;
+                        tokens.addAttribute(attribute);
+                        while (tokens.incrementToken()) {
+                            map.put(BODY_FIELD, tokens.getAttribute(attribute).toString().toUpperCase(Locale.ENGLISH));
+                        }
+                        tokens.end();
+                    } finally {
+                        tokens.close();
                     }
 
                 }
