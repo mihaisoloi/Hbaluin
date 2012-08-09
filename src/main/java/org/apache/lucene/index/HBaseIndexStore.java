@@ -76,11 +76,14 @@ public class HBaseIndexStore {
         scan.addFamily(COLUMN_FAMILY.name);
         FilterList list = new FilterList(FilterList.Operator.MUST_PASS_ONE);
         for (Map.Entry<MessageFields, String> query : queries.entries()) {
-            RowFilter rowFilter = new RowFilter(CompareFilter.CompareOp.EQUAL,
-                    new BinaryPrefixComparator(Bytes.add(mailboxId,
-                            new byte[]{query.getKey().id},
-                            Bytes.toBytes(query.getValue().toUpperCase(Locale.ENGLISH)))));
-            list.addFilter(rowFilter);
+            String value = query.getValue().toUpperCase(Locale.ENGLISH);
+            byte[] prefix = Bytes.add(mailboxId, new byte[]{query.getKey().id});
+            RowFilter rowFilterPrefix = new RowFilter(CompareFilter.CompareOp.EQUAL,
+                    new BinaryPrefixComparator(Bytes.add(prefix, Bytes.toBytes(value))));
+            RowFilter rowFilterRegex = new RowFilter(CompareFilter.CompareOp.EQUAL,
+                    new RegexStringComparator(Bytes.toString(prefix)+".*?"+value+".*+"));
+            list.addFilter(rowFilterPrefix);
+            list.addFilter(rowFilterRegex);
         }
         scan.setFilter(list);
         return table.getScanner(scan);

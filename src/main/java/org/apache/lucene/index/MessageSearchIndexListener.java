@@ -223,11 +223,11 @@ public class MessageSearchIndexListener extends ListeningMessageSearchIndex<UUID
         Multimap<MessageFields, String> textQuery = ArrayListMultimap.create();
         switch (crit.getType()) {
             case BODY:
-                textQuery.put(BODY_FIELD, value);
+                tokenize(BODY_FIELD, value,textQuery);
                 break;
             case FULL:
-                textQuery.put(BODY_FIELD, value);
-                textQuery.put(HEADERS_FIELD, value);
+                tokenize(BODY_FIELD, value,textQuery);
+                tokenize(HEADERS_FIELD, value,textQuery);
                 break;
         }
         return textQuery;
@@ -249,7 +249,6 @@ public class MessageSearchIndexListener extends ListeningMessageSearchIndex<UUID
         } else*/ if (op instanceof SearchQuery.AddressOperator) {
                 String address = ((SearchQuery.AddressOperator) op).getAddress().toUpperCase(Locale.ENGLISH);
                 tokenize(PREFIX_HEADER_FIELD,address,headerQuery);
-//                headerQuery.put(PREFIX_HEADER_FIELD, address);
             } else // Operator not supported
                 throw new UnsupportedSearchException();
         return headerQuery;
@@ -318,7 +317,7 @@ public class MessageSearchIndexListener extends ListeningMessageSearchIndex<UUID
                             if (address instanceof org.apache.james.mime4j.dom.address.Mailbox) {
                                 org.apache.james.mime4j.dom.address.Mailbox mailbox = (org.apache.james.mime4j.dom.address.Mailbox) address;
                                 String value = AddressFormatter.DEFAULT.encode(mailbox).toUpperCase(Locale.ENGLISH);
-                                tokenize(field, value,map);
+                                tokenize(field, value, map);
                                 if (i == 0) {
                                     String mailboxAddress = SearchUtil.getMailboxAddress(mailbox);
                                     String mailboxDisplay = SearchUtil.getDisplayAddress(mailbox);
@@ -361,7 +360,7 @@ public class MessageSearchIndexListener extends ListeningMessageSearchIndex<UUID
                             }
                         }
 
-                        tokenize(field, headerValue,map);
+                        tokenize(field, headerValue, map);
 
                     } else if (headerName.equalsIgnoreCase("Subject")) {
                         map.put(BASE_SUBJECT_FIELD, SearchUtil.getBaseSubject(headerValue));
