@@ -2,7 +2,9 @@ package org.apache.lucene.index;
 
 import com.google.common.collect.ArrayListMultimap;
 import com.google.common.collect.Lists;
+import com.google.common.collect.Multimap;
 import com.google.common.collect.Sets;
+import org.apache.commons.io.IOUtils;
 import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.client.ResultScanner;
@@ -30,19 +32,14 @@ import org.apache.james.mime4j.parser.MimeStreamParser;
 import org.apache.james.mime4j.stream.BodyDescriptor;
 import org.apache.james.mime4j.stream.MimeConfig;
 import org.apache.james.mime4j.util.MimeUtil;
-import org.apache.lucene.analysis.Analyzer;
-import org.apache.lucene.analysis.TokenStream;
-import org.apache.lucene.analysis.core.SimpleAnalyzer;
+import org.apache.lucene.analysis.standard.UAX29URLEmailTokenizer;
 import org.apache.lucene.analysis.tokenattributes.CharTermAttribute;
 import org.apache.lucene.util.Version;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.mail.Flags;
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
+import java.io.*;
 import java.nio.charset.Charset;
 import java.util.*;
 
@@ -212,15 +209,18 @@ public class MessageSearchIndexListener extends ListeningMessageSearchIndex<UUID
      * @throws org.apache.james.mailbox.exception.UnsupportedSearchException
      *
      */
-    private ArrayListMultimap<MessageFields, String> createQuery(SearchQuery.Criterion criterion) throws UnsupportedSearchException, MailboxException {
+    private Multimap<MessageFields, String> createQuery(SearchQuery.Criterion criterion) throws UnsupportedSearchException, MailboxException {
         if (criterion instanceof SearchQuery.TextCriterion)
             return createTextQuery((SearchQuery.TextCriterion) criterion);
+        else if (criterion instanceof SearchQuery.HeaderCriterion)
+            return createHeaderQuery((SearchQuery.HeaderCriterion) criterion);
+
         throw new UnsupportedSearchException();
     }
 
-    public ArrayListMultimap<MessageFields, String> createTextQuery(SearchQuery.TextCriterion crit) {
+    private Multimap<MessageFields, String> createTextQuery(SearchQuery.TextCriterion crit) {
         String value = crit.getOperator().getValue().toUpperCase(Locale.ENGLISH);
-        ArrayListMultimap<MessageFields, String> textQuery = ArrayListMultimap.create();
+        Multimap<MessageFields, String> textQuery = ArrayListMultimap.create();
         switch (crit.getType()) {
             case BODY:
                 textQuery.put(BODY_FIELD, value);
@@ -231,6 +231,46 @@ public class MessageSearchIndexListener extends ListeningMessageSearchIndex<UUID
                 break;
         }
         return textQuery;
+    }
+
+    private Multimap<MessageFields, String> createHeaderQuery(SearchQuery.HeaderCriterion crit) throws UnsupportedSearchException {
+        SearchQuery.HeaderOperator op = crit.getOperator();
+        String name = crit.getHeaderName().toUpperCase(Locale.ENGLISH);
+        Multimap<MessageFields, String> headerQuery = ArrayListMultimap.create();
+        String fieldName = PREFIX_HEADER_FIELD + name;
+        if (op instanceof SearchQuery.ContainsOperator)
+            headerQuery.put(PREFIX_HEADER_FIELD, ((SearchQuery.ContainsOperator) op).getValue().toUpperCase(Locale.ENGLISH));
+        else if (op instanceof SearchQuery.ExistsOperator)
+            headerQuery.put(PREFIX_HEADER_FIELD, "");
+        else /*if (op instanceof SearchQuery.DateOperator) {
+            SearchQuery.DateOperator dop = (SearchQuery.DateOperator) op;
+            String field = toSentDateField(dop.getDateResultion());
+            return createQuery(field, dop);
+        } else*/ if (op instanceof SearchQuery.AddressOperator) {
+                String address = ((SearchQuery.AddressOperator) op).getAddress().toUpperCase(Locale.ENGLISH);
+                tokenize(PREFIX_HEADER_FIELD,address,headerQuery);
+//                headerQuery.put(PREFIX_HEADER_FIELD, address);
+            } else // Operator not supported
+                throw new UnsupportedSearchException();
+        return headerQuery;
+    }
+
+    protected static void tokenize(MessageFields field, String value, Multimap<MessageFields, String> map) {
+        tokenize(field, new StringReader(value), map);
+    }
+
+    protected static void tokenize(MessageFields field, Reader reader, Multimap<MessageFields, String> map) {
+        UAX29URLEmailTokenizer tokenizer = new UAX29URLEmailTokenizer(Version.LUCENE_40, reader);
+//                StandardTokenizer tokenizer = new StandardTokenizer(Version.LUCENE_40, reader);
+        tokenizer.addAttribute(CharTermAttribute.class);
+        try {
+            while (tokenizer.incrementToken())
+                map.put(field, tokenizer.getAttribute(CharTermAttribute.class).toString().toUpperCase(Locale.ENGLISH));
+        } catch (IOException ioe) {
+            LOG.warn("Problem tokenizing " + field.name(), ioe);
+        } finally {
+            IOUtils.closeQuietly(tokenizer);
+        }
     }
 
     private ArrayListMultimap<MessageFields, String> parseFullContent(final Message<UUID> message) throws MailboxException {
@@ -253,8 +293,8 @@ public class MessageSearchIndexListener extends ListeningMessageSearchIndex<UUID
                     String headerName = f.getName().toUpperCase(Locale.ENGLISH);
                     String headerValue = f.getBody().toUpperCase(Locale.ENGLISH);
                     String fullValue = f.toString().toUpperCase(Locale.ENGLISH);
-                    map.put(HEADERS_FIELD, fullValue);
-                    map.put(PREFIX_HEADER_FIELD, headerValue);
+                    tokenize(HEADERS_FIELD, fullValue,map);
+                    tokenize(PREFIX_HEADER_FIELD, headerValue,map);
 
                     MessageFields field = null;
                     if ("To".equalsIgnoreCase(headerName)) {
@@ -278,7 +318,7 @@ public class MessageSearchIndexListener extends ListeningMessageSearchIndex<UUID
                             if (address instanceof org.apache.james.mime4j.dom.address.Mailbox) {
                                 org.apache.james.mime4j.dom.address.Mailbox mailbox = (org.apache.james.mime4j.dom.address.Mailbox) address;
                                 String value = AddressFormatter.DEFAULT.encode(mailbox).toUpperCase(Locale.ENGLISH);
-                                map.put(field, value);
+                                tokenize(field, value,map);
                                 if (i == 0) {
                                     String mailboxAddress = SearchUtil.getMailboxAddress(mailbox);
                                     String mailboxDisplay = SearchUtil.getDisplayAddress(mailbox);
@@ -321,7 +361,7 @@ public class MessageSearchIndexListener extends ListeningMessageSearchIndex<UUID
                             }
                         }
 
-                        map.put(field, headerValue);
+                        tokenize(field, headerValue,map);
 
                     } else if (headerName.equalsIgnoreCase("Subject")) {
                         map.put(BASE_SUBJECT_FIELD, SearchUtil.getBaseSubject(headerValue));
@@ -358,20 +398,7 @@ public class MessageSearchIndexListener extends ListeningMessageSearchIndex<UUID
                     }
 
                     // Read the content one line after the other and add it to the document
-                    BufferedReader bodyReader = new BufferedReader(new InputStreamReader(in, charset));
-                    TokenStream tokens = null;
-                    try {
-                        tokens = new SimpleAnalyzer(Version.LUCENE_40).tokenStream(BODY_FIELD.name(), bodyReader);
-                        Class<CharTermAttribute> attribute = CharTermAttribute.class;
-                        tokens.addAttribute(attribute);
-                        while (tokens.incrementToken()) {
-                            map.put(BODY_FIELD, tokens.getAttribute(attribute).toString().toUpperCase(Locale.ENGLISH));
-                        }
-                        tokens.end();
-                    } finally {
-                        tokens.close();
-                    }
-
+                    tokenize(BODY_FIELD, new BufferedReader(new InputStreamReader(in, charset)), map);
                 }
             }
 
