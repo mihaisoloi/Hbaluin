@@ -1,4 +1,4 @@
-package org.apache.lucene.index;
+package org.apache.james.mailbox.hbase.index;
 
 import com.google.common.collect.ArrayListMultimap;
 import com.google.common.collect.Lists;
@@ -12,6 +12,9 @@ import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.james.mailbox.MailboxSession;
 import org.apache.james.mailbox.exception.MailboxException;
 import org.apache.james.mailbox.exception.UnsupportedSearchException;
+import org.apache.james.mailbox.hbase.store.HBaseIndexStore;
+import org.apache.james.mailbox.hbase.store.HBaseNames;
+import org.apache.james.mailbox.hbase.store.MessageFields;
 import org.apache.james.mailbox.model.MessageRange;
 import org.apache.james.mailbox.model.SearchQuery;
 import org.apache.james.mailbox.store.mail.MessageMapperFactory;
@@ -42,10 +45,6 @@ import javax.mail.Flags;
 import java.io.*;
 import java.nio.charset.Charset;
 import java.util.*;
-
-import static org.apache.james.mailbox.lucene.hbase.HBaseNames.COLUMN_FAMILY;
-import static org.apache.james.mailbox.lucene.hbase.HBaseNames.EMPTY_COLUMN_VALUE;
-import static org.apache.lucene.index.MessageFields.*;
 
 public class MessageSearchIndexListener extends ListeningMessageSearchIndex<UUID> {
 
@@ -94,7 +93,7 @@ public class MessageSearchIndexListener extends ListeningMessageSearchIndex<UUID
         final long messageId = message.getUid();
         for (Map.Entry<MessageFields, String> entry : parseFullContent(message).entries()) {
             Put put = new Put(Bytes.add(uuidToBytes(mailboxId), new byte[]{entry.getKey().id}, Bytes.toBytes(entry.getValue())));
-            put.add(COLUMN_FAMILY.name, Bytes.toBytes(messageId), EMPTY_COLUMN_VALUE.name);
+            put.add(HBaseNames.COLUMN_FAMILY.name, Bytes.toBytes(messageId), HBaseNames.EMPTY_COLUMN_VALUE.name);
             puts.add(put);
         }
         return puts;
@@ -125,7 +124,7 @@ public class MessageSearchIndexListener extends ListeningMessageSearchIndex<UUID
 
     @Override
     public void delete(MailboxSession session, Mailbox<UUID> mailbox, MessageRange range) throws MailboxException {
-        // delete a message from index - maybe just mark it in a list and perform the delete on HBase compactions
+        // delete a message from mailbox - maybe just mark it in a list and perform the delete on HBase compactions
         for (Long messageId : range) {
             ResultScanner scanner = null;
             try {
@@ -193,7 +192,7 @@ public class MessageSearchIndexListener extends ListeningMessageSearchIndex<UUID
         try {
             scanner = store.retrieveMails(uuidToBytes(mailbox.getMailboxId()), queries);
             for (Result result : scanner)
-                for (byte[] qualifier : result.getFamilyMap(COLUMN_FAMILY.name).keySet())
+                for (byte[] qualifier : result.getFamilyMap(HBaseNames.COLUMN_FAMILY.name).keySet())
                     uids.add(Bytes.toLong(qualifier));
         } catch (IOException e) {
             LOG.warn("Couldn't search through mailbox");
@@ -223,11 +222,11 @@ public class MessageSearchIndexListener extends ListeningMessageSearchIndex<UUID
         Multimap<MessageFields, String> textQuery = ArrayListMultimap.create();
         switch (crit.getType()) {
             case BODY:
-                tokenize(BODY_FIELD, value,textQuery);
+                tokenize(MessageFields.BODY_FIELD, value,textQuery);
                 break;
             case FULL:
-                tokenize(BODY_FIELD, value,textQuery);
-                tokenize(HEADERS_FIELD, value,textQuery);
+                tokenize(MessageFields.BODY_FIELD, value,textQuery);
+                tokenize(MessageFields.HEADERS_FIELD, value,textQuery);
                 break;
         }
         return textQuery;
@@ -237,18 +236,18 @@ public class MessageSearchIndexListener extends ListeningMessageSearchIndex<UUID
         SearchQuery.HeaderOperator op = crit.getOperator();
         String name = crit.getHeaderName().toUpperCase(Locale.ENGLISH);
         Multimap<MessageFields, String> headerQuery = ArrayListMultimap.create();
-        String fieldName = PREFIX_HEADER_FIELD + name;
+        String fieldName = MessageFields.PREFIX_HEADER_FIELD + name;
         if (op instanceof SearchQuery.ContainsOperator)
-            headerQuery.put(PREFIX_HEADER_FIELD, ((SearchQuery.ContainsOperator) op).getValue().toUpperCase(Locale.ENGLISH));
+            headerQuery.put(MessageFields.PREFIX_HEADER_FIELD, ((SearchQuery.ContainsOperator) op).getValue().toUpperCase(Locale.ENGLISH));
         else if (op instanceof SearchQuery.ExistsOperator)
-            headerQuery.put(PREFIX_HEADER_FIELD, "");
+            headerQuery.put(MessageFields.PREFIX_HEADER_FIELD, "");
         else /*if (op instanceof SearchQuery.DateOperator) {
             SearchQuery.DateOperator dop = (SearchQuery.DateOperator) op;
             String field = toSentDateField(dop.getDateResultion());
             return createQuery(field, dop);
         } else*/ if (op instanceof SearchQuery.AddressOperator) {
                 String address = ((SearchQuery.AddressOperator) op).getAddress().toUpperCase(Locale.ENGLISH);
-                tokenize(PREFIX_HEADER_FIELD,address,headerQuery);
+                tokenize(MessageFields.PREFIX_HEADER_FIELD,address,headerQuery);
             } else // Operator not supported
                 throw new UnsupportedSearchException();
         return headerQuery;
@@ -275,7 +274,7 @@ public class MessageSearchIndexListener extends ListeningMessageSearchIndex<UUID
     private ArrayListMultimap<MessageFields, String> parseFullContent(final Message<UUID> message) throws MailboxException {
         final ArrayListMultimap<MessageFields, String> map = ArrayListMultimap.create();
 
-        // content handler which will index the headers and the body of the message
+        // content handler which will mailbox the headers and the body of the message
         SimpleContentHandler handler = new SimpleContentHandler() {
             public void headers(Header header) {
 
@@ -292,22 +291,22 @@ public class MessageSearchIndexListener extends ListeningMessageSearchIndex<UUID
                     String headerName = f.getName().toUpperCase(Locale.ENGLISH);
                     String headerValue = f.getBody().toUpperCase(Locale.ENGLISH);
                     String fullValue = f.toString().toUpperCase(Locale.ENGLISH);
-                    tokenize(HEADERS_FIELD, fullValue,map);
-                    tokenize(PREFIX_HEADER_FIELD, headerValue,map);
+                    tokenize(MessageFields.HEADERS_FIELD, fullValue,map);
+                    tokenize(MessageFields.PREFIX_HEADER_FIELD, headerValue,map);
 
                     MessageFields field = null;
                     if ("To".equalsIgnoreCase(headerName)) {
-                        field = TO_FIELD;
+                        field = MessageFields.TO_FIELD;
                     } else if ("From".equalsIgnoreCase(headerName)) {
-                        field = FROM_FIELD;
+                        field = MessageFields.FROM_FIELD;
                     } else if ("Cc".equalsIgnoreCase(headerName)) {
-                        field = CC_FIELD;
+                        field = MessageFields.CC_FIELD;
                     } else if ("Bcc".equalsIgnoreCase(headerName)) {
-                        field = BCC_FIELD;
+                        field = MessageFields.BCC_FIELD;
                     }
 
 
-                    // Check if we can index the the address in the right manner
+                    // Check if we can mailbox the the address in the right manner
                     if (field != null) {
                         // not sure if we really should reparse it. It maybe be better to check just for the right type.
                         // But this impl was easier in the first place
@@ -363,20 +362,20 @@ public class MessageSearchIndexListener extends ListeningMessageSearchIndex<UUID
                         tokenize(field, headerValue, map);
 
                     } else if (headerName.equalsIgnoreCase("Subject")) {
-                        map.put(BASE_SUBJECT_FIELD, SearchUtil.getBaseSubject(headerValue));
+                        map.put(MessageFields.BASE_SUBJECT_FIELD, SearchUtil.getBaseSubject(headerValue));
                     }
                 }
                 if (sentDate == null) {
                     sentDate = message.getInternalDate();
                 } else {
-                    map.put(SENT_DATE_FIELD, Long.toString(sentDate.getTime()));
+                    map.put(MessageFields.SENT_DATE_FIELD, Long.toString(sentDate.getTime()));
 
                 }
-                map.put(FIRST_FROM_MAILBOX_NAME_FIELD, firstFromMailbox);
-                map.put(FIRST_TO_MAILBOX_NAME_FIELD, firstToMailbox);
-                map.put(FIRST_CC_MAILBOX_NAME_FIELD, firstCcMailbox);
-                map.put(FIRST_FROM_MAILBOX_DISPLAY_FIELD, firstFromDisplay);
-                map.put(FIRST_TO_MAILBOX_DISPLAY_FIELD, firstToDisplay);
+                map.put(MessageFields.FIRST_FROM_MAILBOX_NAME_FIELD, firstFromMailbox);
+                map.put(MessageFields.FIRST_TO_MAILBOX_NAME_FIELD, firstToMailbox);
+                map.put(MessageFields.FIRST_CC_MAILBOX_NAME_FIELD, firstCcMailbox);
+                map.put(MessageFields.FIRST_FROM_MAILBOX_DISPLAY_FIELD, firstFromDisplay);
+                map.put(MessageFields.FIRST_TO_MAILBOX_DISPLAY_FIELD, firstToDisplay);
 
             }
 
@@ -397,7 +396,7 @@ public class MessageSearchIndexListener extends ListeningMessageSearchIndex<UUID
                     }
 
                     // Read the content one line after the other and add it to the document
-                    tokenize(BODY_FIELD, new BufferedReader(new InputStreamReader(in, charset)), map);
+                    tokenize(MessageFields.BODY_FIELD, new BufferedReader(new InputStreamReader(in, charset)), map);
                 }
             }
 
@@ -411,15 +410,15 @@ public class MessageSearchIndexListener extends ListeningMessageSearchIndex<UUID
         parser.setContentHandler(handler);
 
         try {
-            // parse the message to index headers and body
+            // parse the message to mailbox headers and body
             parser.parse(message.getFullContent());
         } catch (MimeException e) {
             // This should never happen as it was parsed before too without problems.
-            throw new MailboxException("Unable to index content of message", e);
+            throw new MailboxException("Unable to mailbox content of message", e);
         } catch (IOException e) {
             // This should never happen as it was parsed before too without problems.
-            // anyway let us just skip the body and headers in the index
-            throw new MailboxException("Unable to index content of message", e);
+            // anyway let us just skip the body and headers in the mailbox
+            throw new MailboxException("Unable to mailbox content of message", e);
         }
 
         return map;

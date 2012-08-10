@@ -1,4 +1,4 @@
-package org.apache.lucene.index;
+package org.apache.james.mailbox.hbase.store;
 
 import com.google.common.collect.ArrayListMultimap;
 import org.apache.hadoop.conf.Configuration;
@@ -16,9 +16,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
-import static org.apache.james.mailbox.lucene.hbase.HBaseNames.COLUMN_FAMILY;
-import static org.apache.james.mailbox.lucene.hbase.HBaseNames.INDEX_TABLE;
-
 public class HBaseIndexStore {
     private static final Logger LOG = LoggerFactory.getLogger(HBaseIndexStore.class);
 
@@ -34,11 +31,11 @@ public class HBaseIndexStore {
     public static HTableInterface createIndexTable(final Configuration configuration) throws IOException {
         HBaseAdmin admin = new HBaseAdmin(configuration);
 
-        HTableDescriptor htd = new HTableDescriptor(INDEX_TABLE.name);
-        HColumnDescriptor columnDescriptor = new HColumnDescriptor(COLUMN_FAMILY.name);
+        HTableDescriptor htd = new HTableDescriptor(HBaseNames.INDEX_TABLE.name);
+        HColumnDescriptor columnDescriptor = new HColumnDescriptor(HBaseNames.COLUMN_FAMILY.name);
         htd.addFamily(columnDescriptor);
         admin.createTable(htd);
-        table = new HTable(configuration, INDEX_TABLE.name);
+        table = new HTable(configuration, HBaseNames.INDEX_TABLE.name);
         return table;
     }
 
@@ -56,7 +53,7 @@ public class HBaseIndexStore {
 
     public ResultScanner retrieveMails(byte[] mailboxId, long messageId) throws IOException {
         Scan scan = new Scan();
-        scan.addColumn(COLUMN_FAMILY.name, Bytes.toBytes(messageId));
+        scan.addColumn(HBaseNames.COLUMN_FAMILY.name, Bytes.toBytes(messageId));
         RowFilter filter = new RowFilter(CompareFilter.CompareOp.EQUAL,
                 new BinaryPrefixComparator(mailboxId));
         scan.setFilter(filter);
@@ -65,7 +62,7 @@ public class HBaseIndexStore {
 
     public ResultScanner retrieveMails(byte[] mailboxId, ArrayListMultimap<MessageFields, String> queries) throws IOException {
         Scan scan = new Scan();
-        scan.addFamily(COLUMN_FAMILY.name);
+        scan.addFamily(HBaseNames.COLUMN_FAMILY.name);
         FilterList prefixList = new FilterList(FilterList.Operator.MUST_PASS_ONE);
         FilterList regexList = new FilterList();
         for (Map.Entry<MessageFields, String> query : queries.entries()) {
@@ -85,7 +82,7 @@ public class HBaseIndexStore {
 
     public void deleteMail(byte[] row, long messageId) throws IOException {
         Delete delete = new Delete(row);
-        delete.deleteColumn(COLUMN_FAMILY.name, Bytes.toBytes(messageId));
+        delete.deleteColumn(HBaseNames.COLUMN_FAMILY.name, Bytes.toBytes(messageId));
         table.delete(delete);
     }
 

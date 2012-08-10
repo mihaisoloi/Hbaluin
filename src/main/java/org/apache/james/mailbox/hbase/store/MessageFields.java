@@ -1,4 +1,4 @@
-package org.apache.lucene.index;
+package org.apache.james.mailbox.hbase.store;
 
 public enum MessageFields {
     NOT_FOUND((byte) 0),

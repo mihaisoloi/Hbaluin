@@ -1,23 +1,22 @@
-package org.apache.james.mailbox.lucene.hbase;
+package org.apache.james.mailbox.hbase.index;
 
 import org.apache.hadoop.hbase.HBaseTestingUtility;
 import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.util.Bytes;
+import org.apache.james.mailbox.hbase.store.HBaseIndexStore;
+import org.apache.james.mailbox.hbase.store.MessageBuilder;
+import org.apache.james.mailbox.hbase.store.SimpleMailboxMembership;
 import org.apache.james.mailbox.model.MailboxACL;
 import org.apache.james.mailbox.model.SearchQuery;
 import org.apache.james.mailbox.model.SimpleMailboxACL;
 import org.apache.james.mailbox.store.mail.model.Mailbox;
-import org.apache.lucene.index.HBaseIndexStore;
-import org.apache.lucene.index.MessageSearchIndexListener;
 import org.junit.*;
-import store.MessageBuilder;
-import store.SimpleMailboxMembership;
 
 import javax.mail.Flags;
 import java.nio.charset.Charset;
 import java.util.*;
 
-import static org.apache.james.mailbox.lucene.hbase.HBaseNames.COLUMN_FAMILY;
+import static org.apache.james.mailbox.hbase.store.HBaseNames.COLUMN_FAMILY;
 import static org.junit.Assert.*;
 
 public class MessageSearchIndexListenerTest {
@@ -119,7 +118,7 @@ public class MessageSearchIndexListenerTest {
             byte[] row = result.getRow();
             UUID mailboxUUID = index.rowToUUID(row);
             assertEquals(mailbox3.getMailboxId(),mailboxUUID);
-            System.out.println(mailboxUUID+"-"+index.rowToField(row).name() + "/" +index.rowToTerm(row) );
+//            System.out.println(mailboxUUID+"-"+index.rowToField(row).name() + "/" +index.rowToTerm(row) );
         }
     }
 
