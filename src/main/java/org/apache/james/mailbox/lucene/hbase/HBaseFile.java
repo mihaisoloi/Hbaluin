@@ -17,9 +17,6 @@
 
 package org.apache.james.mailbox.lucene.hbase;
 
-import java.io.File;
-import java.io.FileNotFoundException;
-import java.io.RandomAccessFile;
 import java.io.Serializable;
 import java.util.ArrayList;
 

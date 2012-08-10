@@ -1,61 +1,25 @@
 package org.apache.james.mailbox.lucene.hbase;
 
-import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.hbase.HBaseTestingUtility;
 import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.james.mailbox.model.MailboxACL;
 import org.apache.james.mailbox.model.SearchQuery;
 import org.apache.james.mailbox.model.SimpleMailboxACL;
+import org.apache.james.mailbox.store.mail.model.Mailbox;
+import org.apache.lucene.index.HBaseIndexStore;
+import org.apache.lucene.index.MessageSearchIndexListener;
 import org.junit.*;
 import store.MessageBuilder;
 import store.SimpleMailboxMembership;
-import org.apache.james.mailbox.store.mail.model.Mailbox;
-import org.apache.james.mailbox.store.mail.model.Message;
-import org.apache.lucene.index.HBaseIndexStore;
-import org.apache.lucene.index.MessageSearchIndexListener;
 
 import javax.mail.Flags;
-import java.io.File;
 import java.nio.charset.Charset;
 import java.util.*;
 
 import static org.apache.james.mailbox.lucene.hbase.HBaseNames.COLUMN_FAMILY;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.*;
 
-/**
- 00000000-0000-0002-0000-000000000000-BODY_FIELD/A
- 00000000-0000-0002-0000-000000000000-BODY_FIELD/CUSTARD
- 00000000-0000-0002-0000-000000000000-BODY_FIELD/ELSE
- 00000000-0000-0002-0000-000000000000-BODY_FIELD/EMAIL
- 00000000-0000-0002-0000-000000000000-BODY_FIELD/HAS
- 00000000-0000-0002-0000-000000000000-BODY_FIELD/IS
- 00000000-0000-0002-0000-000000000000-BODY_FIELD/IT
- 00000000-0000-0002-0000-000000000000-BODY_FIELD/NAUGHT
- 00000000-0000-0002-0000-000000000000-BODY_FIELD/NEEDS
- 00000000-0000-0002-0000-000000000000-BODY_FIELD/RHUBARD
- 00000000-0000-0002-0000-000000000000-BODY_FIELD/SIMPLE
- 00000000-0000-0002-0000-000000000000-BODY_FIELD/THIS
- 00000000-0000-0002-0000-000000000000-PREFIX_HEADER_FIELD/A MIXED MULTIPART MAIL
- 00000000-0000-0002-0000-000000000000-PREFIX_HEADER_FIELD/HARRY <HARRY@EXAMPLE.ORG>
- 00000000-0000-0002-0000-000000000000-PREFIX_HEADER_FIELD/TEST <USER-FROM@DOMAIN.ORG>
- 00000000-0000-0002-0000-000000000000-PREFIX_HEADER_FIELD/THU, 14 FEB 2008 12:00:00 +0000 (GMT)
- 00000000-0000-0002-0000-000000000000-HEADERS_FIELD/DATE: THU, 14 FEB 2008 12:00:00 +0000 (GMT)
- 00000000-0000-0002-0000-000000000000-HEADERS_FIELD/FROM: TEST <USER-FROM@DOMAIN.ORG>
- 00000000-0000-0002-0000-000000000000-HEADERS_FIELD/SUBJECT: A MIXED MULTIPART MAIL
- 00000000-0000-0002-0000-000000000000-HEADERS_FIELD/TO: HARRY <HARRY@EXAMPLE.ORG>
- 00000000-0000-0002-0000-000000000000-TO_FIELD/HARRY <HARRY@EXAMPLE.ORG>
- 00000000-0000-0002-0000-000000000000-FROM_FIELD/TEST <USER-FROM@DOMAIN.ORG>
- 00000000-0000-0002-0000-000000000000-BASE_SUBJECT_FIELD/A MIXED MULTIPART MAIL
- 00000000-0000-0002-0000-000000000000-FIRST_FROM_MAILBOX_NAME_FIELD/user-from
- 00000000-0000-0002-0000-000000000000-FIRST_TO_MAILBOX_NAME_FIELD/harry
- 00000000-0000-0002-0000-000000000000-FIRST_CC_MAILBOX_NAME_FIELD/
- 00000000-0000-0002-0000-000000000000-FIRST_FROM_MAILBOX_DISPLAY_FIELD/test
- 00000000-0000-0002-0000-000000000000-FIRST_TO_MAILBOX_DISPLAY_FIELD/Harry
- */
 public class MessageSearchIndexListenerTest {
     private MessageSearchIndexListener index;
     private static HBaseIndexStore store;

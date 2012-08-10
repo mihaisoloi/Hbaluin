@@ -42,14 +42,6 @@ public class HBaseIndexStore {
         return table;
     }
 
-    public Put persistTerm(String mailboxId, int docId, String field, byte[] term) throws IOException {
-        //row = mailboxID - term
-        Put put = new Put(Bytes.add(Bytes.toBytes(mailboxId), Constants.SEPARATOR, term));
-        // family=column_family, qualifier = documentID,value = fields
-        put.add(COLUMN_FAMILY.name, Bytes.toBytes(docId), Bytes.toBytes(field));
-        return put;
-    }
-
     /**
      * writes the rows as puts in HBase where the qualifier is composed of the mailID
      *
@@ -74,7 +66,8 @@ public class HBaseIndexStore {
     public ResultScanner retrieveMails(byte[] mailboxId, ArrayListMultimap<MessageFields, String> queries) throws IOException {
         Scan scan = new Scan();
         scan.addFamily(COLUMN_FAMILY.name);
-        FilterList list = new FilterList(FilterList.Operator.MUST_PASS_ONE);
+        FilterList prefixList = new FilterList(FilterList.Operator.MUST_PASS_ONE);
+        FilterList regexList = new FilterList();
         for (Map.Entry<MessageFields, String> query : queries.entries()) {
             String value = query.getValue().toUpperCase(Locale.ENGLISH);
             byte[] prefix = Bytes.add(mailboxId, new byte[]{query.getKey().id});
@@ -82,10 +75,11 @@ public class HBaseIndexStore {
                     new BinaryPrefixComparator(Bytes.add(prefix, Bytes.toBytes(value))));
             RowFilter rowFilterRegex = new RowFilter(CompareFilter.CompareOp.EQUAL,
                     new RegexStringComparator(Bytes.toString(prefix)+".*?"+value+".*+"));
-            list.addFilter(rowFilterPrefix);
-            list.addFilter(rowFilterRegex);
+            prefixList.addFilter(rowFilterPrefix);
+            regexList.addFilter(rowFilterRegex);
         }
-        scan.setFilter(list);
+        prefixList.addFilter(regexList);
+        scan.setFilter(prefixList);
         return table.getScanner(scan);
     }
 

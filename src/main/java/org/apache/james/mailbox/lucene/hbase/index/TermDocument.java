@@ -17,7 +17,6 @@
 
 package org.apache.james.mailbox.lucene.hbase.index;
 
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 

@@ -17,7 +17,6 @@ package org.apache.james.mailbox.lucene.hbase;
  * limitations under the License.
  */
 
-import org.apache.hadoop.conf.Configuration;
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
