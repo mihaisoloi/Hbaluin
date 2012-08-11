@@ -46,6 +46,8 @@ import java.io.*;
 import java.nio.charset.Charset;
 import java.util.*;
 
+import static org.apache.james.mailbox.hbase.store.MessageFields.*;
+
 public class MessageSearchIndexListener extends ListeningMessageSearchIndex<UUID> {
 
     private final static Logger LOG = LoggerFactory.getLogger(MessageSearchIndexListener.class);
@@ -114,7 +116,7 @@ public class MessageSearchIndexListener extends ListeningMessageSearchIndex<UUID
         for (MessageFields field : MessageFields.values())
             if (field.id == fieldRead[0])
                 return field;
-        return MessageFields.NOT_FOUND;
+        return NOT_FOUND;
     }
 
     public static String rowToTerm(byte[] row) {
@@ -213,6 +215,8 @@ public class MessageSearchIndexListener extends ListeningMessageSearchIndex<UUID
             return createTextQuery((SearchQuery.TextCriterion) criterion);
         else if (criterion instanceof SearchQuery.HeaderCriterion)
             return createHeaderQuery((SearchQuery.HeaderCriterion) criterion);
+        else if (criterion instanceof SearchQuery.AllCriterion) //searches on all mail uids on that mailbox
+            return ArrayListMultimap.create();
 
         throw new UnsupportedSearchException();
     }
@@ -222,11 +226,11 @@ public class MessageSearchIndexListener extends ListeningMessageSearchIndex<UUID
         Multimap<MessageFields, String> textQuery = ArrayListMultimap.create();
         switch (crit.getType()) {
             case BODY:
-                tokenize(MessageFields.BODY_FIELD, value,textQuery);
+                tokenize(BODY_FIELD, value, textQuery);
                 break;
             case FULL:
-                tokenize(MessageFields.BODY_FIELD, value,textQuery);
-                tokenize(MessageFields.HEADERS_FIELD, value,textQuery);
+                tokenize(BODY_FIELD, value, textQuery);
+                tokenize(HEADERS_FIELD, value, textQuery);
                 break;
         }
         return textQuery;
@@ -234,32 +238,31 @@ public class MessageSearchIndexListener extends ListeningMessageSearchIndex<UUID
 
     private Multimap<MessageFields, String> createHeaderQuery(SearchQuery.HeaderCriterion crit) throws UnsupportedSearchException {
         SearchQuery.HeaderOperator op = crit.getOperator();
-        String name = crit.getHeaderName().toUpperCase(Locale.ENGLISH);
+        MessageFields field = getHeaderField(crit.getHeaderName());
         Multimap<MessageFields, String> headerQuery = ArrayListMultimap.create();
-        String fieldName = MessageFields.PREFIX_HEADER_FIELD + name;
-        if (op instanceof SearchQuery.ContainsOperator)
-            headerQuery.put(MessageFields.PREFIX_HEADER_FIELD, ((SearchQuery.ContainsOperator) op).getValue().toUpperCase(Locale.ENGLISH));
-        else if (op instanceof SearchQuery.ExistsOperator)
-            headerQuery.put(MessageFields.PREFIX_HEADER_FIELD, "");
+        if (op instanceof SearchQuery.ContainsOperator) {
+            String containedInHeader = ((SearchQuery.ContainsOperator) op).getValue().toUpperCase(Locale.ENGLISH);
+            headerQuery.put(field, containedInHeader);
+        } else if (op instanceof SearchQuery.ExistsOperator)
+            headerQuery.put(field, "");
         else /*if (op instanceof SearchQuery.DateOperator) {
             SearchQuery.DateOperator dop = (SearchQuery.DateOperator) op;
             String field = toSentDateField(dop.getDateResultion());
             return createQuery(field, dop);
         } else*/ if (op instanceof SearchQuery.AddressOperator) {
                 String address = ((SearchQuery.AddressOperator) op).getAddress().toUpperCase(Locale.ENGLISH);
-                tokenize(MessageFields.PREFIX_HEADER_FIELD,address,headerQuery);
+                tokenize(field, address, headerQuery);
             } else // Operator not supported
                 throw new UnsupportedSearchException();
         return headerQuery;
     }
 
-    protected static void tokenize(MessageFields field, String value, Multimap<MessageFields, String> map) {
+    private static void tokenize(MessageFields field, String value, Multimap<MessageFields, String> map) {
         tokenize(field, new StringReader(value), map);
     }
 
-    protected static void tokenize(MessageFields field, Reader reader, Multimap<MessageFields, String> map) {
+    private static void tokenize(MessageFields field, Reader reader, Multimap<MessageFields, String> map) {
         UAX29URLEmailTokenizer tokenizer = new UAX29URLEmailTokenizer(Version.LUCENE_40, reader);
-//                StandardTokenizer tokenizer = new StandardTokenizer(Version.LUCENE_40, reader);
         tokenizer.addAttribute(CharTermAttribute.class);
         try {
             while (tokenizer.incrementToken())
@@ -269,6 +272,20 @@ public class MessageSearchIndexListener extends ListeningMessageSearchIndex<UUID
         } finally {
             IOUtils.closeQuietly(tokenizer);
         }
+    }
+
+    private MessageFields getHeaderField(String headerName) {
+        if ("To".equalsIgnoreCase(headerName))
+            return TO_FIELD;
+        else if ("From".equalsIgnoreCase(headerName))
+            return FROM_FIELD;
+        else if ("Cc".equalsIgnoreCase(headerName))
+            return CC_FIELD;
+        else if ("Bcc".equalsIgnoreCase(headerName))
+            return BCC_FIELD;
+        else if ("Subject".equalsIgnoreCase(headerName))
+            return BASE_SUBJECT_FIELD;
+        return PREFIX_HEADER_FIELD;
     }
 
     private ArrayListMultimap<MessageFields, String> parseFullContent(final Message<UUID> message) throws MailboxException {
@@ -291,20 +308,10 @@ public class MessageSearchIndexListener extends ListeningMessageSearchIndex<UUID
                     String headerName = f.getName().toUpperCase(Locale.ENGLISH);
                     String headerValue = f.getBody().toUpperCase(Locale.ENGLISH);
                     String fullValue = f.toString().toUpperCase(Locale.ENGLISH);
-                    tokenize(MessageFields.HEADERS_FIELD, fullValue,map);
-                    tokenize(MessageFields.PREFIX_HEADER_FIELD, headerValue,map);
+                    tokenize(HEADERS_FIELD, fullValue, map);
+                    tokenize(PREFIX_HEADER_FIELD, headerValue, map);
 
-                    MessageFields field = null;
-                    if ("To".equalsIgnoreCase(headerName)) {
-                        field = MessageFields.TO_FIELD;
-                    } else if ("From".equalsIgnoreCase(headerName)) {
-                        field = MessageFields.FROM_FIELD;
-                    } else if ("Cc".equalsIgnoreCase(headerName)) {
-                        field = MessageFields.CC_FIELD;
-                    } else if ("Bcc".equalsIgnoreCase(headerName)) {
-                        field = MessageFields.BCC_FIELD;
-                    }
-
+                    MessageFields field = getHeaderField(headerName);
 
                     // Check if we can mailbox the the address in the right manner
                     if (field != null) {
@@ -321,17 +328,19 @@ public class MessageSearchIndexListener extends ListeningMessageSearchIndex<UUID
                                     String mailboxAddress = SearchUtil.getMailboxAddress(mailbox);
                                     String mailboxDisplay = SearchUtil.getDisplayAddress(mailbox);
 
-                                    if ("To".equalsIgnoreCase(headerName)) {
-                                        firstToMailbox = mailboxAddress;
-                                        firstToDisplay = mailboxDisplay;
-                                    } else if ("From".equalsIgnoreCase(headerName)) {
-                                        firstFromMailbox = mailboxAddress;
-                                        firstFromDisplay = mailboxDisplay;
-
-                                    } else if ("Cc".equalsIgnoreCase(headerName)) {
-                                        firstCcMailbox = mailboxAddress;
+                                    switch (field) {
+                                        case TO_FIELD:
+                                            firstToMailbox = mailboxAddress;
+                                            firstToDisplay = mailboxDisplay;
+                                            break;
+                                        case FROM_FIELD:
+                                            firstFromMailbox = mailboxAddress;
+                                            firstFromDisplay = mailboxDisplay;
+                                            break;
+                                        case CC_FIELD:
+                                            firstCcMailbox = mailboxAddress;
+                                            break;
                                     }
-
                                 }
                             } else if (address instanceof Group) {
                                 MailboxList mList = ((Group) address).getMailboxes();
@@ -344,15 +353,18 @@ public class MessageSearchIndexListener extends ListeningMessageSearchIndex<UUID
                                         String mailboxAddress = SearchUtil.getMailboxAddress(mailbox);
                                         String mailboxDisplay = SearchUtil.getDisplayAddress(mailbox);
 
-                                        if ("To".equalsIgnoreCase(headerName)) {
-                                            firstToMailbox = mailboxAddress;
-                                            firstToDisplay = mailboxDisplay;
-                                        } else if ("From".equalsIgnoreCase(headerName)) {
-                                            firstFromMailbox = mailboxAddress;
-                                            firstFromDisplay = mailboxDisplay;
-
-                                        } else if ("Cc".equalsIgnoreCase(headerName)) {
-                                            firstCcMailbox = mailboxAddress;
+                                        switch (field) {
+                                            case TO_FIELD:
+                                                firstToMailbox = mailboxAddress;
+                                                firstToDisplay = mailboxDisplay;
+                                                break;
+                                            case FROM_FIELD:
+                                                firstFromMailbox = mailboxAddress;
+                                                firstFromDisplay = mailboxDisplay;
+                                                break;
+                                            case CC_FIELD:
+                                                firstCcMailbox = mailboxAddress;
+                                                break;
                                         }
                                     }
                                 }
@@ -362,20 +374,20 @@ public class MessageSearchIndexListener extends ListeningMessageSearchIndex<UUID
                         tokenize(field, headerValue, map);
 
                     } else if (headerName.equalsIgnoreCase("Subject")) {
-                        map.put(MessageFields.BASE_SUBJECT_FIELD, SearchUtil.getBaseSubject(headerValue));
+                        map.put(BASE_SUBJECT_FIELD, SearchUtil.getBaseSubject(headerValue));
                     }
                 }
                 if (sentDate == null) {
                     sentDate = message.getInternalDate();
                 } else {
-                    map.put(MessageFields.SENT_DATE_FIELD, Long.toString(sentDate.getTime()));
+                    map.put(SENT_DATE_FIELD, Long.toString(sentDate.getTime()));
 
                 }
-                map.put(MessageFields.FIRST_FROM_MAILBOX_NAME_FIELD, firstFromMailbox);
-                map.put(MessageFields.FIRST_TO_MAILBOX_NAME_FIELD, firstToMailbox);
-                map.put(MessageFields.FIRST_CC_MAILBOX_NAME_FIELD, firstCcMailbox);
-                map.put(MessageFields.FIRST_FROM_MAILBOX_DISPLAY_FIELD, firstFromDisplay);
-                map.put(MessageFields.FIRST_TO_MAILBOX_DISPLAY_FIELD, firstToDisplay);
+                map.put(FIRST_FROM_MAILBOX_NAME_FIELD, firstFromMailbox);
+                map.put(FIRST_TO_MAILBOX_NAME_FIELD, firstToMailbox);
+                map.put(FIRST_CC_MAILBOX_NAME_FIELD, firstCcMailbox);
+                map.put(FIRST_FROM_MAILBOX_DISPLAY_FIELD, firstFromDisplay);
+                map.put(FIRST_TO_MAILBOX_DISPLAY_FIELD, firstToDisplay);
 
             }
 
@@ -396,7 +408,7 @@ public class MessageSearchIndexListener extends ListeningMessageSearchIndex<UUID
                     }
 
                     // Read the content one line after the other and add it to the document
-                    tokenize(MessageFields.BODY_FIELD, new BufferedReader(new InputStreamReader(in, charset)), map);
+                    tokenize(BODY_FIELD, new BufferedReader(new InputStreamReader(in, charset)), map);
                 }
             }
 

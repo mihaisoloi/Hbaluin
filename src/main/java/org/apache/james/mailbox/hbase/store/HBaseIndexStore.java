@@ -51,7 +51,18 @@ public class HBaseIndexStore {
         }
     }
 
+    public ResultScanner retrieveMails(byte[] mailboxId) throws IOException {
+        Scan scan = new Scan();
+        scan.addFamily(HBaseNames.COLUMN_FAMILY.name);
+        RowFilter filter = new RowFilter(CompareFilter.CompareOp.EQUAL,
+                new BinaryPrefixComparator(mailboxId));
+        scan.setFilter(filter);
+        return table.getScanner(scan);
+    }
+
     public ResultScanner retrieveMails(byte[] mailboxId, long messageId) throws IOException {
+        if (messageId == 0l)
+            return retrieveMails(mailboxId);
         Scan scan = new Scan();
         scan.addColumn(HBaseNames.COLUMN_FAMILY.name, Bytes.toBytes(messageId));
         RowFilter filter = new RowFilter(CompareFilter.CompareOp.EQUAL,
@@ -61,22 +72,23 @@ public class HBaseIndexStore {
     }
 
     public ResultScanner retrieveMails(byte[] mailboxId, ArrayListMultimap<MessageFields, String> queries) throws IOException {
+        if (queries.isEmpty())
+            return retrieveMails(mailboxId);
         Scan scan = new Scan();
         scan.addFamily(HBaseNames.COLUMN_FAMILY.name);
-        FilterList prefixList = new FilterList(FilterList.Operator.MUST_PASS_ONE);
-        FilterList regexList = new FilterList();
+        FilterList list = new FilterList(FilterList.Operator.MUST_PASS_ONE);
         for (Map.Entry<MessageFields, String> query : queries.entries()) {
-            String value = query.getValue().toUpperCase(Locale.ENGLISH);
-            byte[] prefix = Bytes.add(mailboxId, new byte[]{query.getKey().id});
+            String term = query.getValue().toUpperCase(Locale.ENGLISH);
+            byte[] field = new byte[]{query.getKey().id};
+            byte[] prefix = Bytes.add(mailboxId, field);
             RowFilter rowFilterPrefix = new RowFilter(CompareFilter.CompareOp.EQUAL,
-                    new BinaryPrefixComparator(Bytes.add(prefix, Bytes.toBytes(value))));
+                    new BinaryPrefixComparator(Bytes.add(prefix, Bytes.toBytes(term))));
             RowFilter rowFilterRegex = new RowFilter(CompareFilter.CompareOp.EQUAL,
-                    new RegexStringComparator(Bytes.toString(prefix)+".*?"+value+".*+"));
-            prefixList.addFilter(rowFilterPrefix);
-            regexList.addFilter(rowFilterRegex);
+                    new RegexStringComparator(Bytes.toString(prefix) + ".*?" + term + ".*+"));
+            list.addFilter(rowFilterPrefix);
+            list.addFilter(rowFilterRegex);
         }
-        prefixList.addFilter(regexList);
-        scan.setFilter(prefixList);
+        scan.setFilter(list);
         return table.getScanner(scan);
     }
 

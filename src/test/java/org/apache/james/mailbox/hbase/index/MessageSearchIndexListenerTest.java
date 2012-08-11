@@ -118,7 +118,7 @@ public class MessageSearchIndexListenerTest {
             byte[] row = result.getRow();
             UUID mailboxUUID = index.rowToUUID(row);
             assertEquals(mailbox3.getMailboxId(),mailboxUUID);
-//            System.out.println(mailboxUUID+"-"+index.rowToField(row).name() + "/" +index.rowToTerm(row) );
+            System.out.println(mailboxUUID+"-"+index.rowToField(row).name() + "/" +index.rowToTerm(row) );
         }
     }
 
@@ -235,7 +235,6 @@ public class MessageSearchIndexListenerTest {
         assertFalse(result.hasNext());
     }
 
-    @Ignore("unsupported operation")
     @Test
     public void testSearchAll() throws Exception {
         SearchQuery query = new SearchQuery();
@@ -258,7 +257,6 @@ public class MessageSearchIndexListenerTest {
         assertFalse(it3.hasNext());
     }
 
-    @Ignore("unsupported operation")
     @Test
     public void testSearchBody() throws Exception {
         SearchQuery q2 = new SearchQuery();
@@ -271,7 +269,6 @@ public class MessageSearchIndexListenerTest {
         assertFalse(it4.hasNext());
     }
 
-    @Ignore("unsupported operation")
     @Test
     public void testSearchMail() throws Exception {
         SearchQuery q2 = new SearchQuery();
@@ -284,7 +281,6 @@ public class MessageSearchIndexListenerTest {
         assertFalse(it4.hasNext());
     }
 
-    @Ignore("unsupported operation")
     @Test
     public void testSearchHeaderContains() throws Exception {
         SearchQuery q2 = new SearchQuery();
@@ -296,7 +292,6 @@ public class MessageSearchIndexListenerTest {
         assertFalse(it4.hasNext());
     }
 
-    @Ignore("unsupported operation")
     @Test
     public void testSearchHeaderExists() throws Exception {
         SearchQuery q2 = new SearchQuery();
