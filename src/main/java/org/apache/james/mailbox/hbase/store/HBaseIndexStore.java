@@ -10,33 +10,38 @@ import org.apache.hadoop.hbase.util.Bytes;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.mail.Flags;
 import java.io.IOException;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
+import static org.apache.james.mailbox.hbase.store.HBaseNames.COLUMN_FAMILY;
+import static org.apache.james.mailbox.hbase.store.MessageFields.FLAGS_FIELD;
+
 public class HBaseIndexStore {
     private static final Logger LOG = LoggerFactory.getLogger(HBaseIndexStore.class);
-
+    private static HBaseIndexStore store;
     private static HTableInterface table;
 
-    public HBaseIndexStore() {
+    private HBaseIndexStore() {
     }
 
-    public HTableInterface getTable() {
-        return table;
+    public static synchronized HBaseIndexStore getInstance(final Configuration configuration) throws IOException {
+        if (store == null) {
+            store = new HBaseIndexStore();
+            HBaseAdmin admin = new HBaseAdmin(configuration);
+
+            HTableDescriptor htd = new HTableDescriptor(HBaseNames.INDEX_TABLE.name);
+            HColumnDescriptor columnDescriptor = new HColumnDescriptor(COLUMN_FAMILY.name);
+            htd.addFamily(columnDescriptor);
+            admin.createTable(htd);
+            table = new HTable(configuration, HBaseNames.INDEX_TABLE.name);
+        }
+        return store;
     }
 
-    public static HTableInterface createIndexTable(final Configuration configuration) throws IOException {
-        HBaseAdmin admin = new HBaseAdmin(configuration);
-
-        HTableDescriptor htd = new HTableDescriptor(HBaseNames.INDEX_TABLE.name);
-        HColumnDescriptor columnDescriptor = new HColumnDescriptor(HBaseNames.COLUMN_FAMILY.name);
-        htd.addFamily(columnDescriptor);
-        admin.createTable(htd);
-        table = new HTable(configuration, HBaseNames.INDEX_TABLE.name);
-        return table;
+    public Object clone() throws CloneNotSupportedException {
+        throw new CloneNotSupportedException();
     }
 
     /**
@@ -51,9 +56,9 @@ public class HBaseIndexStore {
         }
     }
 
-    public ResultScanner retrieveMails(byte[] mailboxId) throws IOException {
+    ResultScanner retrieveMails(byte[] mailboxId) throws IOException {
         Scan scan = new Scan();
-        scan.addFamily(HBaseNames.COLUMN_FAMILY.name);
+        scan.addFamily(COLUMN_FAMILY.name);
         RowFilter filter = new RowFilter(CompareFilter.CompareOp.EQUAL,
                 new BinaryPrefixComparator(mailboxId));
         scan.setFilter(filter);
@@ -64,7 +69,7 @@ public class HBaseIndexStore {
         if (messageId == 0l)
             return retrieveMails(mailboxId);
         Scan scan = new Scan();
-        scan.addColumn(HBaseNames.COLUMN_FAMILY.name, Bytes.toBytes(messageId));
+        scan.addColumn(COLUMN_FAMILY.name, Bytes.toBytes(messageId));
         RowFilter filter = new RowFilter(CompareFilter.CompareOp.EQUAL,
                 new BinaryPrefixComparator(mailboxId));
         scan.setFilter(filter);
@@ -75,18 +80,29 @@ public class HBaseIndexStore {
         if (queries.isEmpty())
             return retrieveMails(mailboxId);
         Scan scan = new Scan();
-        scan.addFamily(HBaseNames.COLUMN_FAMILY.name);
+        scan.addFamily(COLUMN_FAMILY.name);
         FilterList list = new FilterList(FilterList.Operator.MUST_PASS_ONE);
         for (Map.Entry<MessageFields, String> query : queries.entries()) {
             String term = query.getValue().toUpperCase(Locale.ENGLISH);
             byte[] field = new byte[]{query.getKey().id};
             byte[] prefix = Bytes.add(mailboxId, field);
-            RowFilter rowFilterPrefix = new RowFilter(CompareFilter.CompareOp.EQUAL,
-                    new BinaryPrefixComparator(Bytes.add(prefix, Bytes.toBytes(term))));
-            RowFilter rowFilterRegex = new RowFilter(CompareFilter.CompareOp.EQUAL,
-                    new RegexStringComparator(Bytes.toString(prefix) + ".*?" + term + ".*+"));
-            list.addFilter(rowFilterPrefix);
-            list.addFilter(rowFilterRegex);
+            if (query.getKey() == MessageFields.FLAGS_FIELD) {
+                final FilterList flagList = new FilterList(FilterList.Operator.MUST_PASS_ALL);
+                RowFilter rowFilter = new RowFilter(CompareFilter.CompareOp.EQUAL,
+                        new BinaryComparator(prefix));
+                ValueFilter valueFilter = new ValueFilter(CompareFilter.CompareOp.EQUAL,
+                        new SubstringComparator(term));
+                flagList.addFilter(rowFilter);
+                flagList.addFilter(valueFilter);
+                list.addFilter(flagList);
+            } else {
+                RowFilter rowFilterPrefix = new RowFilter(CompareFilter.CompareOp.EQUAL,
+                        new BinaryPrefixComparator(Bytes.add(prefix, Bytes.toBytes(term))));
+                RowFilter rowFilterRegex = new RowFilter(CompareFilter.CompareOp.EQUAL,
+                        new RegexStringComparator(Bytes.toString(prefix) + ".*?" + term + ".*+"));
+                list.addFilter(rowFilterPrefix);
+                list.addFilter(rowFilterRegex);
+            }
         }
         scan.setFilter(list);
         return table.getScanner(scan);
@@ -94,7 +110,7 @@ public class HBaseIndexStore {
 
     public void deleteMail(byte[] row, long messageId) throws IOException {
         Delete delete = new Delete(row);
-        delete.deleteColumn(HBaseNames.COLUMN_FAMILY.name, Bytes.toBytes(messageId));
+        delete.deleteColumn(COLUMN_FAMILY.name, Bytes.toBytes(messageId));
         table.delete(delete);
     }
 
@@ -102,8 +118,16 @@ public class HBaseIndexStore {
         table.flushCommits();
     }
 
-    public void updateFlags(byte[] row, Long messageId, Flags flags) {
-        Scan scan = new Scan();
+    public Result retrieveFlags(byte[] mailboxId, long messageId) throws IOException {
+        Get get = new Get(Bytes.add(mailboxId, new byte[]{FLAGS_FIELD.id}));
+        get.addColumn(COLUMN_FAMILY.name, Bytes.toBytes(messageId));
+        return table.get(get);
+    }
+
+    public void updateFlags(byte[] row, long messageId, String flags) throws IOException {
+        Put put = new Put(row);
+        put.add(COLUMN_FAMILY.name, Bytes.toBytes(messageId), Bytes.toBytes(flags));
+        table.put(put);
     }
 
 

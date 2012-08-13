@@ -2,7 +2,7 @@ package org.apache.james.mailbox.hbase.store;
 
 public enum MessageFields {
     NOT_FOUND((byte) 0),
-//    UID_FIELD((byte) 1), -->this is the qualifier
+    FLAGS_FIELD((byte) 1),
     BODY_FIELD((byte) 2),
     PREFIX_HEADER_FIELD((byte) 3),
     HEADERS_FIELD((byte) 4),

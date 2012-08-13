@@ -20,8 +20,7 @@ package org.apache.james.mailbox.hbase.store;
 import org.apache.hadoop.hbase.util.Bytes;
 
 public enum HBaseNames {
-    INDEX_TABLE("INDEX"), COLUMN_FAMILY("F"), TERM_DOCUMENT_CF("T"), SEGMENTS_TABLE("SEGMENTS"), CONTENTS_QUALIFIER("CONTENT"),
-    FILE_NAME("NAME"), FILE_CONTENT("CONTENT"), EMPTY_COLUMN_VALUE(""), PRIMARY_KEY("UID");
+    INDEX_TABLE("INDEX"), COLUMN_FAMILY("F"), EMPTY_COLUMN_VALUE("");
 
     public final byte[] name;
 

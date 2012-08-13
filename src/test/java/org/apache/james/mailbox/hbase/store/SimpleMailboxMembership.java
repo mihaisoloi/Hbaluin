@@ -28,9 +28,9 @@ import java.util.*;
 import java.util.Map.Entry;
 
 public class SimpleMailboxMembership implements Message<UUID> {
-    
+
     private static final String TOSTRING_SEPARATOR = " ";
-    
+
     public UUID mailboxId;
     public long uid;
     public Date internalDate;
@@ -42,21 +42,15 @@ public class SimpleMailboxMembership implements Message<UUID> {
     public boolean seen = false;
 
     public SimpleMailboxMembership(UUID mailboxId, long uid, long modSeq, Date internalDate, int size,
-                                   Flags flags, byte[] body, final Map<String, String> headers) throws Exception {
+                                   Flags flags, byte[] body, final Map<String, String> headers) {
         super();
         this.mailboxId = mailboxId;
         this.uid = uid;
         this.internalDate = internalDate;
         this.size = size;
         this.body = body;
-        final Map<String,String> originalHeaders = headers;
-        if (originalHeaders == null) {
-            this.headers = new HashMap<String,String>();
-        } else {
-            this.headers = originalHeaders;
-        }
-        
-        this.body =  body;
+        this.headers = (headers == null) ? new HashMap<String, String>() : headers;
+        this.body = body;
         setFlags(flags);
     }
 
@@ -73,7 +67,7 @@ public class SimpleMailboxMembership implements Message<UUID> {
     public UUID getMailboxId() {
         return mailboxId;
     }
-    
+
     /**
      * @see org.apache.james.imap.Message.mail.model.Document#getUid()
      */
@@ -129,7 +123,7 @@ public class SimpleMailboxMembership implements Message<UUID> {
     public void unsetRecent() {
         recent = false;
     }
-    
+
     /**
      * @see org.apache.james.imap.Message.mail.model.Document#setFlags(javax.mail.Flags)
      */
@@ -186,35 +180,28 @@ public class SimpleMailboxMembership implements Message<UUID> {
         if (getClass() != obj.getClass())
             return false;
         final Message<UUID> other = (Message<UUID>) obj;
-        if (mailboxId != other.getMailboxId())
-            return false;
-        if (uid != other.getUid())
-            return false;
-        return true;
+        return mailboxId == other.getMailboxId() && uid == other.getUid();
     }
 
-    public String toString()
-    {
-        final String retValue = 
-            "mailbox("
-            + "mailboxId = " + this.mailboxId + TOSTRING_SEPARATOR
-            + "uid = " + this.uid + TOSTRING_SEPARATOR
-            + "internalDate = " + this.internalDate + TOSTRING_SEPARATOR
-            + "size = " + this.size + TOSTRING_SEPARATOR
-            + "answered = " + this.answered + TOSTRING_SEPARATOR
-            + "deleted = " + this.deleted + TOSTRING_SEPARATOR
-            + "draft = " + this.draft + TOSTRING_SEPARATOR
-            + "flagged = " + this.flagged + TOSTRING_SEPARATOR
-            + "recent = " + this.recent + TOSTRING_SEPARATOR
-            + "seen = " + this.seen + TOSTRING_SEPARATOR
-            + " )";
-
-        return retValue;
+    public String toString() {
+        return
+                "mailbox("
+                        + "mailboxId = " + this.mailboxId + TOSTRING_SEPARATOR
+                        + "uid = " + this.uid + TOSTRING_SEPARATOR
+                        + "internalDate = " + this.internalDate + TOSTRING_SEPARATOR
+                        + "size = " + this.size + TOSTRING_SEPARATOR
+                        + "answered = " + this.answered + TOSTRING_SEPARATOR
+                        + "deleted = " + this.deleted + TOSTRING_SEPARATOR
+                        + "draft = " + this.draft + TOSTRING_SEPARATOR
+                        + "flagged = " + this.flagged + TOSTRING_SEPARATOR
+                        + "recent = " + this.recent + TOSTRING_SEPARATOR
+                        + "seen = " + this.seen + TOSTRING_SEPARATOR
+                        + " )";
     }
 
-    
-    public static final char[] NEW_LINE = { 0x0D, 0x0A };
-    
+
+    public static final char[] NEW_LINE = {0x0D, 0x0A};
+
     public byte[] body;
     public Map<String, String> headers;
     public List<SimpleProperty> properties;
@@ -225,7 +212,7 @@ public class SimpleMailboxMembership implements Message<UUID> {
     private int size;
 
     private long modSeq;
-    
+
 
     /**
      * @throws java.io.IOException
@@ -303,7 +290,6 @@ public class SimpleMailboxMembership implements Message<UUID> {
     public InputStream getFullContent() throws IOException {
         return new SequenceInputStream(getHeaderContent(), getBodyContent());
     }
-    
-    
+
 
 }

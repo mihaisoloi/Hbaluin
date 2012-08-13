@@ -16,6 +16,7 @@ import javax.mail.Flags;
 import java.nio.charset.Charset;
 import java.util.*;
 
+import static org.apache.james.mailbox.hbase.index.MessageSearchIndexListener.*;
 import static org.apache.james.mailbox.hbase.store.HBaseNames.COLUMN_FAMILY;
 import static org.junit.Assert.*;
 
@@ -47,8 +48,7 @@ public class MessageSearchIndexListenerTest {
     @BeforeClass
     public static void setUpEnvironment() throws Exception {
         HTU.startMiniCluster();
-        store = new HBaseIndexStore();
-        store.createIndexTable(HTU.getConfiguration());
+        store = HBaseIndexStore.getInstance(HTU.getConfiguration());
     }
 
     @Before
@@ -107,18 +107,18 @@ public class MessageSearchIndexListenerTest {
     @Test
     public void testUUIDTransform() throws Exception{
         UUID uuid = new UUID(11,22);
-        assertEquals(uuid,index.rowToUUID(index.uuidToBytes(uuid)));
+        assertEquals(uuid, rowToUUID(uuidToBytes(uuid)));
     }
 
     @Test
     public void testReadMailFromStore() throws Exception{
-        for(Result result: store.retrieveMails(index.uuidToBytes(mailbox3.getMailboxId()),mailId)){
+        for(Result result: store.retrieveMails(uuidToBytes(mailbox3.getMailboxId()),mailId)){
             NavigableMap<byte[],byte[]> family = result.getFamilyMap(COLUMN_FAMILY.name);
             assertEquals(mailId, Bytes.toLong(family.firstEntry().getKey()));
             byte[] row = result.getRow();
-            UUID mailboxUUID = index.rowToUUID(row);
+            UUID mailboxUUID = rowToUUID(row);
             assertEquals(mailbox3.getMailboxId(),mailboxUUID);
-            System.out.println(mailboxUUID+"-"+index.rowToField(row).name() + "/" +index.rowToTerm(row) );
+            System.out.println(mailboxUUID+"-"+ rowToField(row).name() + "/" + rowToTerm(row) );
         }
     }
 
@@ -245,7 +245,6 @@ public class MessageSearchIndexListenerTest {
         assertFalse(it2.hasNext());
     }
 
-    @Ignore("unsupported operation")
     @Test
     public void testSearchFlag() throws Exception {
 
@@ -303,7 +302,6 @@ public class MessageSearchIndexListenerTest {
         assertFalse(it4.hasNext());
     }
 
-    @Ignore("unsupported operation")
     @Test
     public void testSearchFlagUnset() throws Exception {
         SearchQuery q2 = new SearchQuery();
@@ -416,7 +414,6 @@ public class MessageSearchIndexListenerTest {
         assertFalse(it4.hasNext());
     }
 
-    @Ignore("unsupported operation")
     @Test
     public void testSortUid() throws Exception {
         SearchQuery q2 = new SearchQuery();

@@ -37,6 +37,11 @@ import org.apache.james.mime4j.stream.MimeConfig;
 import org.apache.james.mime4j.util.MimeUtil;
 import org.apache.lucene.analysis.standard.UAX29URLEmailTokenizer;
 import org.apache.lucene.analysis.tokenattributes.CharTermAttribute;
+import org.apache.lucene.index.IndexReader;
+import org.apache.lucene.search.IndexSearcher;
+import org.apache.lucene.search.ScoreDoc;
+import org.apache.lucene.search.Sort;
+import org.apache.lucene.search.TopDocs;
 import org.apache.lucene.util.Version;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -46,6 +51,9 @@ import java.io.*;
 import java.nio.charset.Charset;
 import java.util.*;
 
+import static javax.mail.Flags.Flag;
+import static javax.mail.Flags.Flag.*;
+import static org.apache.james.mailbox.hbase.store.HBaseNames.EMPTY_COLUMN_VALUE;
 import static org.apache.james.mailbox.hbase.store.MessageFields.*;
 
 public class MessageSearchIndexListener extends ListeningMessageSearchIndex<UUID> {
@@ -79,39 +87,45 @@ public class MessageSearchIndexListener extends ListeningMessageSearchIndex<UUID
         try {
             store.storeMail(indexMessage(message));
         } catch (IOException e) {
-            LOG.warn("Problem adding the mail " + message.getUid() + " in mailbox " + message.getMailboxId() + " to the storage!");
+            throw new MailboxException("Problem adding the mail " + message.getUid() +
+                    " in mailbox " + message.getMailboxId() + " to the storage!", e);
         } finally {
             try {
                 store.flushToStore();
             } catch (IOException e) {
-                //nothing to do
+                LOG.warn("Storing index in table has failed.");
             }
         }
     }
 
     private List<Put> indexMessage(Message<UUID> message) throws MailboxException {
-        List<Put> puts = Lists.newArrayList();
-        UUID mailboxId = message.getMailboxId();
+        final List<Put> puts = Lists.newArrayList();
+        final UUID mailboxId = message.getMailboxId();
         final long messageId = message.getUid();
+        //add flags
+        Put put = new Put(Bytes.add(uuidToBytes(mailboxId), new byte[]{FLAGS_FIELD.id}));
+        put.add(HBaseNames.COLUMN_FAMILY.name, Bytes.toBytes(messageId), Bytes.toBytes(parseFlagsContent(message)));
+        puts.add(put);
+        //add full content
         for (Map.Entry<MessageFields, String> entry : parseFullContent(message).entries()) {
-            Put put = new Put(Bytes.add(uuidToBytes(mailboxId), new byte[]{entry.getKey().id}, Bytes.toBytes(entry.getValue())));
-            put.add(HBaseNames.COLUMN_FAMILY.name, Bytes.toBytes(messageId), HBaseNames.EMPTY_COLUMN_VALUE.name);
+            put = new Put(Bytes.add(uuidToBytes(mailboxId), new byte[]{entry.getKey().id}, Bytes.toBytes(entry.getValue())));
+            put.add(HBaseNames.COLUMN_FAMILY.name, Bytes.toBytes(messageId), EMPTY_COLUMN_VALUE.name);
             puts.add(put);
         }
         return puts;
     }
 
-    public static final byte[] uuidToBytes(UUID uuid) {
+    public static byte[] uuidToBytes(UUID uuid) {
         return Bytes.add(Bytes.toBytes(uuid.getMostSignificantBits()),
                 Bytes.toBytes(uuid.getLeastSignificantBits()));
     }
 
-    public static final UUID rowToUUID(byte[] row) {
+    public static UUID rowToUUID(byte[] row) {
         byte[] uuidz = Bytes.head(row, 16);
         return new UUID(Bytes.toLong(Bytes.head(uuidz, 8)), Bytes.toLong(Bytes.tail(uuidz, 8)));
     }
 
-    public static final MessageFields rowToField(byte[] row) {
+    public static MessageFields rowToField(byte[] row) {
         byte[] fieldRead = Bytes.tail(Bytes.head(row, 17), 1);
         for (MessageFields field : MessageFields.values())
             if (field.id == fieldRead[0])
@@ -141,7 +155,7 @@ public class MessageSearchIndexListener extends ListeningMessageSearchIndex<UUID
                     store.flushToStore();
                     scanner.close();
                 } catch (IOException e) {
-                    //do nothing
+                    LOG.warn("Storing index in table has failed.");
                 }
             }
         }
@@ -162,20 +176,17 @@ public class MessageSearchIndexListener extends ListeningMessageSearchIndex<UUID
         // update the cells that changed - this means update the flags (and maybe other metadata).
         // message body and headers are immutable so they do not change
         for (Long messageId : range) {
-            ResultScanner scanner = null;
+            Result result;
             try {
-                scanner = store.retrieveMails(uuidToBytes(mailbox.getMailboxId()), messageId);
-                for (Result result : scanner) {
-                    store.updateFlags(result.getRow(), messageId, flags);
-                }
+                result = store.retrieveFlags(uuidToBytes(mailbox.getMailboxId()), messageId);
+                store.updateFlags(result.getRow(), messageId, parseFlagsContent(flags));
             } catch (IOException e) {
-                LOG.warn("Couldn't retrieve mail from mailbox");
+                throw new MailboxException("Couldn't retrieve flags", e);
             } finally {
                 try {
                     store.flushToStore();
-                    scanner.close();
                 } catch (IOException e) {
-                    //do nothing
+                    LOG.warn("Storing index in table has failed.");
                 }
             }
         }
@@ -187,7 +198,7 @@ public class MessageSearchIndexListener extends ListeningMessageSearchIndex<UUID
         Set<Long> uids = Sets.newLinkedHashSet();
         ArrayListMultimap<MessageFields, String> queries = ArrayListMultimap.create();
         for (SearchQuery.Criterion criterion : searchQuery.getCriterias()) {
-            queries.putAll(createQuery(criterion));
+            queries.putAll(createQuery(criterion, mailbox, searchQuery.getRecentMessageUids()));
         }
         ResultScanner scanner = null;
 
@@ -197,28 +208,77 @@ public class MessageSearchIndexListener extends ListeningMessageSearchIndex<UUID
                 for (byte[] qualifier : result.getFamilyMap(HBaseNames.COLUMN_FAMILY.name).keySet())
                     uids.add(Bytes.toLong(qualifier));
         } catch (IOException e) {
-            LOG.warn("Couldn't search through mailbox");
+            throw new MailboxException("Unable to search mailbox " + mailbox, e);
         }
         return uids.iterator();
     }
 
     /**
      * Return a query which is built based on the given {@link org.apache.james.mailbox.model.SearchQuery.Criterion}
-     *
-     * @param criterion
-     * @return query
-     * @throws org.apache.james.mailbox.exception.UnsupportedSearchException
-     *
      */
-    private Multimap<MessageFields, String> createQuery(SearchQuery.Criterion criterion) throws UnsupportedSearchException, MailboxException {
+    private Multimap<MessageFields, String> createQuery(SearchQuery.Criterion criterion, Mailbox<UUID> mailbox, Set<Long> recentUids) throws MailboxException {
         if (criterion instanceof SearchQuery.TextCriterion)
             return createTextQuery((SearchQuery.TextCriterion) criterion);
-        else if (criterion instanceof SearchQuery.HeaderCriterion)
+        else if (criterion instanceof SearchQuery.FlagCriterion) {
+            SearchQuery.FlagCriterion crit = (SearchQuery.FlagCriterion) criterion;
+            return createFlagQuery(toString(crit.getFlag()), crit.getOperator().isSet(), mailbox, recentUids);
+        } else if (criterion instanceof SearchQuery.CustomFlagCriterion) {
+            SearchQuery.CustomFlagCriterion crit = (SearchQuery.CustomFlagCriterion) criterion;
+            return createFlagQuery(crit.getFlag(), crit.getOperator().isSet(), mailbox, recentUids);
+        } else if (criterion instanceof SearchQuery.HeaderCriterion)
             return createHeaderQuery((SearchQuery.HeaderCriterion) criterion);
         else if (criterion instanceof SearchQuery.AllCriterion) //searches on all mail uids on that mailbox
             return ArrayListMultimap.create();
 
         throw new UnsupportedSearchException();
+    }
+
+    private Multimap<MessageFields, String> createFlagQuery(String flag, boolean isSet, Mailbox<UUID> mailbox, Set<Long> recentUids) {
+        final Multimap<MessageFields, String> flagsQuery = ArrayListMultimap.create();
+        flagsQuery.put(FLAGS_FIELD, isSet ? flag : EMPTY_COLUMN_VALUE.toString());
+        return flagsQuery;
+
+        /*IndexSearcher searcher = null;
+
+        try {
+            Set<Long> uids = new HashSet<Long>();
+            searcher = new IndexSearcher(IndexReader.open(writer, true));
+
+            // query for all the documents sorted by uid
+            TopDocs docs = searcher.search(query, null, maxQueryResults, new Sort(UID_SORT));
+            ScoreDoc[] sDocs = docs.scoreDocs;
+            for (int i = 0; i < sDocs.length; i++) {
+                long uid = Long.valueOf(searcher.doc(sDocs[i].doc).get(UID_FIELD));
+                uids.add(uid);
+            }
+
+            // add or remove recent uids
+            if (flag.equalsIgnoreCase("\\RECENT")) {
+                if (isSet) {
+                    uids.addAll(recentUids);
+                } else {
+                    uids.removeAll(recentUids);
+                }
+            }
+
+            List<MessageRange> ranges = MessageRange.toRanges(new ArrayList<Long>(uids));
+            SearchQuery.NumericRange[] nRanges = new SearchQuery.NumericRange[ranges.size()];
+            for (int i = 0; i < ranges.size(); i++) {
+                MessageRange range = ranges.get(i);
+                nRanges[i] = new SearchQuery.NumericRange(range.getUidFrom(), range.getUidTo());
+            }
+            return createUidQuery((SearchQuery.UidCriterion) SearchQuery.uid(nRanges));
+        } catch (IOException e) {
+            throw new MailboxException("Unable to search mailbox " + mailbox, e);
+        } finally {
+            if (searcher != null) {
+                try {
+                    searcher.close();
+                } catch (IOException e) {
+                    // ignore on close
+                }
+            }
+        }*/
     }
 
     private Multimap<MessageFields, String> createTextQuery(SearchQuery.TextCriterion crit) {
@@ -295,16 +355,13 @@ public class MessageSearchIndexListener extends ListeningMessageSearchIndex<UUID
         SimpleContentHandler handler = new SimpleContentHandler() {
             public void headers(Header header) {
 
-                Date sentDate = null;
                 String firstFromMailbox = "";
                 String firstToMailbox = "";
                 String firstCcMailbox = "";
                 String firstFromDisplay = "";
                 String firstToDisplay = "";
 
-                Iterator<org.apache.james.mime4j.stream.Field> fields = header.iterator();
-                while (fields.hasNext()) {
-                    org.apache.james.mime4j.stream.Field f = fields.next();
+                for (org.apache.james.mime4j.stream.Field f : header) {
                     String headerName = f.getName().toUpperCase(Locale.ENGLISH);
                     String headerValue = f.getBody().toUpperCase(Locale.ENGLISH);
                     String fullValue = f.toString().toUpperCase(Locale.ENGLISH);
@@ -377,12 +434,8 @@ public class MessageSearchIndexListener extends ListeningMessageSearchIndex<UUID
                         map.put(BASE_SUBJECT_FIELD, SearchUtil.getBaseSubject(headerValue));
                     }
                 }
-                if (sentDate == null) {
-                    sentDate = message.getInternalDate();
-                } else {
-                    map.put(SENT_DATE_FIELD, Long.toString(sentDate.getTime()));
 
-                }
+                map.put(SENT_DATE_FIELD, Long.toString(message.getInternalDate().getTime()));
                 map.put(FIRST_FROM_MAILBOX_NAME_FIELD, firstFromMailbox);
                 map.put(FIRST_TO_MAILBOX_NAME_FIELD, firstToMailbox);
                 map.put(FIRST_CC_MAILBOX_NAME_FIELD, firstCcMailbox);
@@ -434,5 +487,50 @@ public class MessageSearchIndexListener extends ListeningMessageSearchIndex<UUID
         }
 
         return map;
+    }
+
+    private String parseFlagsContent(Message<?> message) {
+        return parseFlagsContent(message.createFlags());
+    }
+
+    private String parseFlagsContent(Flags flags) {
+        final StringBuilder sb = new StringBuilder();
+        Flag[] systemFlags = flags.getSystemFlags();
+        String[] userFlags = flags.getUserFlags();
+
+        if (systemFlags.length == 0 && userFlags.length == 0)
+            sb.append(EMPTY_COLUMN_VALUE.toString());
+        else {
+            for (Flag systemFlag : systemFlags)
+                sb.append(toString(systemFlag));
+
+            for (String userFlag : userFlags)
+                sb.append(userFlag);
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Convert the given {@link Flag} to a String
+     *
+     * @param flag
+     * @return flagString
+     */
+    private String toString(Flag flag) {
+        if (ANSWERED.equals(flag)) {
+            return "\\ANSWERED";
+        } else if (DELETED.equals(flag)) {
+            return "\\DELETED";
+        } else if (DRAFT.equals(flag)) {
+            return "\\DRAFT";
+        } else if (FLAGGED.equals(flag)) {
+            return "\\FLAGGED";
+        } else if (RECENT.equals(flag)) {
+            return "\\RECENT";
+        } else if (SEEN.equals(flag)) {
+            return "\\FLAG";
+        } else {
+            return flag.toString();
+        }
     }
 }
