@@ -37,11 +37,10 @@ import org.apache.james.mime4j.stream.MimeConfig;
 import org.apache.james.mime4j.util.MimeUtil;
 import org.apache.lucene.analysis.standard.UAX29URLEmailTokenizer;
 import org.apache.lucene.analysis.tokenattributes.CharTermAttribute;
-import org.apache.lucene.index.IndexReader;
-import org.apache.lucene.search.IndexSearcher;
-import org.apache.lucene.search.ScoreDoc;
-import org.apache.lucene.search.Sort;
-import org.apache.lucene.search.TopDocs;
+import org.apache.lucene.document.DateTools;
+import org.apache.lucene.index.Term;
+import org.apache.lucene.search.TermQuery;
+import org.apache.lucene.search.TermRangeQuery;
 import org.apache.lucene.util.Version;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -49,6 +48,7 @@ import org.slf4j.LoggerFactory;
 import javax.mail.Flags;
 import java.io.*;
 import java.nio.charset.Charset;
+import java.text.ParseException;
 import java.util.*;
 
 import static javax.mail.Flags.Flag;
@@ -217,7 +217,9 @@ public class MessageSearchIndexListener extends ListeningMessageSearchIndex<UUID
      * Return a query which is built based on the given {@link org.apache.james.mailbox.model.SearchQuery.Criterion}
      */
     private Multimap<MessageFields, String> createQuery(SearchQuery.Criterion criterion, Mailbox<UUID> mailbox, Set<Long> recentUids) throws MailboxException {
-        if (criterion instanceof SearchQuery.TextCriterion)
+        if (criterion instanceof SearchQuery.InternalDateCriterion)
+            return createInternalDateQuery((SearchQuery.InternalDateCriterion) criterion);
+        else if (criterion instanceof SearchQuery.TextCriterion)
             return createTextQuery((SearchQuery.TextCriterion) criterion);
         else if (criterion instanceof SearchQuery.FlagCriterion) {
             SearchQuery.FlagCriterion crit = (SearchQuery.FlagCriterion) criterion;
@@ -233,52 +235,57 @@ public class MessageSearchIndexListener extends ListeningMessageSearchIndex<UUID
         throw new UnsupportedSearchException();
     }
 
+    private Multimap<MessageFields, String> createInternalDateQuery(SearchQuery.InternalDateCriterion crit) throws UnsupportedSearchException {
+        final Multimap<MessageFields, String> dateQuery = ArrayListMultimap.create();
+        SearchQuery.DateOperator dop = crit.getOperator();
+        Date date = dop.getDate();
+        SearchQuery.DateResolution res = dop.getDateResultion();
+        DateTools.Resolution dRes = toResolution(res);
+        String value = DateTools.dateToString(date, dRes);
+        long time = 0l;
+        try {
+            time = DateTools.stringToTime(value);
+        } catch (ParseException e) {
+            //do nothing
+        }
+        System.out.println(value+"~~~~~~~~~"+date.getTime()+"~~~~~~~"+time);
+        switch(dop.getType()) {
+            case ON:
+                dateQuery.put(SENT_DATE_FIELD,"0"+Long.toString(time));
+                break;
+            case BEFORE:
+                dateQuery.put(SENT_DATE_FIELD,"1"+Long.toString(time));
+            case AFTER:
+                dateQuery.put(SENT_DATE_FIELD,"2"+Long.toString(time));
+            default:
+                throw new UnsupportedSearchException();
+        }
+        return dateQuery;
+    }
+
+    private DateTools.Resolution toResolution(SearchQuery.DateResolution res) {
+        switch (res) {
+            case Year:
+                return DateTools.Resolution.YEAR;
+            case Month:
+                return DateTools.Resolution.MONTH;
+            case Day:
+                return DateTools.Resolution.DAY;
+            case Hour:
+                return DateTools.Resolution.HOUR;
+            case Minute:
+                return DateTools.Resolution.MINUTE;
+            case Second:
+                return DateTools.Resolution.SECOND;
+            default:
+                return DateTools.Resolution.MILLISECOND;
+        }
+    }
+
     private Multimap<MessageFields, String> createFlagQuery(String flag, boolean isSet, Mailbox<UUID> mailbox, Set<Long> recentUids) {
         final Multimap<MessageFields, String> flagsQuery = ArrayListMultimap.create();
         flagsQuery.put(FLAGS_FIELD, isSet ? flag : EMPTY_COLUMN_VALUE.toString());
         return flagsQuery;
-
-        /*IndexSearcher searcher = null;
-
-        try {
-            Set<Long> uids = new HashSet<Long>();
-            searcher = new IndexSearcher(IndexReader.open(writer, true));
-
-            // query for all the documents sorted by uid
-            TopDocs docs = searcher.search(query, null, maxQueryResults, new Sort(UID_SORT));
-            ScoreDoc[] sDocs = docs.scoreDocs;
-            for (int i = 0; i < sDocs.length; i++) {
-                long uid = Long.valueOf(searcher.doc(sDocs[i].doc).get(UID_FIELD));
-                uids.add(uid);
-            }
-
-            // add or remove recent uids
-            if (flag.equalsIgnoreCase("\\RECENT")) {
-                if (isSet) {
-                    uids.addAll(recentUids);
-                } else {
-                    uids.removeAll(recentUids);
-                }
-            }
-
-            List<MessageRange> ranges = MessageRange.toRanges(new ArrayList<Long>(uids));
-            SearchQuery.NumericRange[] nRanges = new SearchQuery.NumericRange[ranges.size()];
-            for (int i = 0; i < ranges.size(); i++) {
-                MessageRange range = ranges.get(i);
-                nRanges[i] = new SearchQuery.NumericRange(range.getUidFrom(), range.getUidTo());
-            }
-            return createUidQuery((SearchQuery.UidCriterion) SearchQuery.uid(nRanges));
-        } catch (IOException e) {
-            throw new MailboxException("Unable to search mailbox " + mailbox, e);
-        } finally {
-            if (searcher != null) {
-                try {
-                    searcher.close();
-                } catch (IOException e) {
-                    // ignore on close
-                }
-            }
-        }*/
     }
 
     private Multimap<MessageFields, String> createTextQuery(SearchQuery.TextCriterion crit) {

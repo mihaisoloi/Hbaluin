@@ -11,6 +11,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.sql.Time;
+import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -56,7 +58,7 @@ public class HBaseIndexStore {
         }
     }
 
-    ResultScanner retrieveMails(byte[] mailboxId) throws IOException {
+    public ResultScanner retrieveMails(byte[] mailboxId) throws IOException {
         Scan scan = new Scan();
         scan.addFamily(COLUMN_FAMILY.name);
         RowFilter filter = new RowFilter(CompareFilter.CompareOp.EQUAL,
@@ -86,22 +88,50 @@ public class HBaseIndexStore {
             String term = query.getValue().toUpperCase(Locale.ENGLISH);
             byte[] field = new byte[]{query.getKey().id};
             byte[] prefix = Bytes.add(mailboxId, field);
-            if (query.getKey() == MessageFields.FLAGS_FIELD) {
-                final FilterList flagList = new FilterList(FilterList.Operator.MUST_PASS_ALL);
-                RowFilter rowFilter = new RowFilter(CompareFilter.CompareOp.EQUAL,
-                        new BinaryComparator(prefix));
-                ValueFilter valueFilter = new ValueFilter(CompareFilter.CompareOp.EQUAL,
-                        new SubstringComparator(term));
-                flagList.addFilter(rowFilter);
-                flagList.addFilter(valueFilter);
-                list.addFilter(flagList);
-            } else {
-                RowFilter rowFilterPrefix = new RowFilter(CompareFilter.CompareOp.EQUAL,
-                        new BinaryPrefixComparator(Bytes.add(prefix, Bytes.toBytes(term))));
-                RowFilter rowFilterRegex = new RowFilter(CompareFilter.CompareOp.EQUAL,
-                        new RegexStringComparator(Bytes.toString(prefix) + ".*?" + term + ".*+"));
-                list.addFilter(rowFilterPrefix);
-                list.addFilter(rowFilterRegex);
+            switch(query.getKey()){
+                case FLAGS_FIELD:
+                    final FilterList flagList = new FilterList(FilterList.Operator.MUST_PASS_ALL);
+                    RowFilter rowFilter = new RowFilter(CompareFilter.CompareOp.EQUAL,
+                            new BinaryComparator(prefix));
+                    ValueFilter valueFilter = new ValueFilter(CompareFilter.CompareOp.EQUAL,
+                            new SubstringComparator(term));
+                    flagList.addFilter(rowFilter);
+                    flagList.addFilter(valueFilter);
+                    list.addFilter(flagList);
+                    break;
+                case SENT_DATE_FIELD:
+                    long time = Long.parseLong(term.substring(1));
+                    long day = 24 * 60 * 60 * 1000;
+                    long max = time + day;
+                    long now = new Date().getTime();
+                    assert(now > time);
+                    assert(now < max);
+                    System.out.println((Bytes.compareTo(Bytes.add(prefix,Bytes.toBytes(now)),Bytes.add(prefix,Bytes.toBytes(time)))>0));
+                    switch(term.charAt(0)){
+                        case 0://ON
+                            FilterList onTime = new FilterList(FilterList.Operator.MUST_PASS_ONE);
+                            RowFilter rowFilter1 = new RowFilter(CompareFilter.CompareOp.GREATER_OR_EQUAL,
+                                    new BinaryComparator(Bytes.add(prefix,Bytes.toBytes(time))));
+                            RowFilter rowFilter2 = new RowFilter(CompareFilter.CompareOp.LESS_OR_EQUAL,
+                                    new BinaryComparator(Bytes.add(prefix,Bytes.toBytes(max))));
+                            onTime.addFilter(rowFilter1);
+                            onTime.addFilter(rowFilter2);
+                            list.addFilter(onTime);
+                            break;
+                        case 1://BEFORE
+                            break;
+                        case 2://AFTER
+                            break;
+                    }
+                    break;
+                default:
+                    RowFilter rowFilterPrefix = new RowFilter(CompareFilter.CompareOp.EQUAL,
+                            new BinaryPrefixComparator(Bytes.add(prefix, Bytes.toBytes(term))));
+                    RowFilter rowFilterRegex = new RowFilter(CompareFilter.CompareOp.EQUAL,
+                            new RegexStringComparator(Bytes.toString(prefix) + ".*?" + term + ".*+"));
+                    list.addFilter(rowFilterPrefix);
+                    list.addFilter(rowFilterRegex);
+                    break;
             }
         }
         scan.setFilter(list);
