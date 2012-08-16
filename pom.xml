@@ -46,7 +46,7 @@
     </repositories>
     <properties>
         <lucene.version>4.0-SNAPSHOT</lucene.version>
-        <hbase.version>0.92.1</hbase.version>
+        <hbase.version>0.94.1</hbase.version>
         <hadoop.version>1.0.3</hadoop.version>
     </properties>
     <dependencies>

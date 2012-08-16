@@ -200,17 +200,12 @@ public class MessageSearchIndexListener extends ListeningMessageSearchIndex<UUID
         for (SearchQuery.Criterion criterion : searchQuery.getCriterias()) {
             queries.putAll(createQuery(criterion, mailbox, searchQuery.getRecentMessageUids()));
         }
-        ResultScanner scanner = null;
 
         try {
-            scanner = store.retrieveMails(uuidToBytes(mailbox.getMailboxId()), queries);
-            for (Result result : scanner)
-                for (byte[] qualifier : result.getFamilyMap(HBaseNames.COLUMN_FAMILY.name).keySet())
-                    uids.add(Bytes.toLong(qualifier));
-        } catch (IOException e) {
-            throw new MailboxException("Unable to search mailbox " + mailbox, e);
+            return store.retrieveMails(uuidToBytes(mailbox.getMailboxId()), queries);
+        } catch (Throwable throwable) {
+            throw new MailboxException("Exception thrown while searching through the index", (Exception) throwable);
         }
-        return uids.iterator();
     }
 
     /**
@@ -237,48 +232,6 @@ public class MessageSearchIndexListener extends ListeningMessageSearchIndex<UUID
         final Multimap<MessageFields, String> flagsQuery = ArrayListMultimap.create();
         flagsQuery.put(FLAGS_FIELD, isSet ? flag : EMPTY_COLUMN_VALUE.toString());
         return flagsQuery;
-
-        /*IndexSearcher searcher = null;
-
-        try {
-            Set<Long> uids = new HashSet<Long>();
-            searcher = new IndexSearcher(IndexReader.open(writer, true));
-
-            // query for all the documents sorted by uid
-            TopDocs docs = searcher.search(query, null, maxQueryResults, new Sort(UID_SORT));
-            ScoreDoc[] sDocs = docs.scoreDocs;
-            for (int i = 0; i < sDocs.length; i++) {
-                long uid = Long.valueOf(searcher.doc(sDocs[i].doc).get(UID_FIELD));
-                uids.add(uid);
-            }
-
-            // add or remove recent uids
-            if (flag.equalsIgnoreCase("\\RECENT")) {
-                if (isSet) {
-                    uids.addAll(recentUids);
-                } else {
-                    uids.removeAll(recentUids);
-                }
-            }
-
-            List<MessageRange> ranges = MessageRange.toRanges(new ArrayList<Long>(uids));
-            SearchQuery.NumericRange[] nRanges = new SearchQuery.NumericRange[ranges.size()];
-            for (int i = 0; i < ranges.size(); i++) {
-                MessageRange range = ranges.get(i);
-                nRanges[i] = new SearchQuery.NumericRange(range.getUidFrom(), range.getUidTo());
-            }
-            return createUidQuery((SearchQuery.UidCriterion) SearchQuery.uid(nRanges));
-        } catch (IOException e) {
-            throw new MailboxException("Unable to search mailbox " + mailbox, e);
-        } finally {
-            if (searcher != null) {
-                try {
-                    searcher.close();
-                } catch (IOException e) {
-                    // ignore on close
-                }
-            }
-        }*/
     }
 
     private Multimap<MessageFields, String> createTextQuery(SearchQuery.TextCriterion crit) {

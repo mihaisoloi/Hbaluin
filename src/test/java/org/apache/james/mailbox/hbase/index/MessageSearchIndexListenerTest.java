@@ -339,14 +339,13 @@ public class MessageSearchIndexListenerTest {
         assertFalse(it4.hasNext());
     }
 
-    @Ignore("unsupported operation")
     @Test
     public void testSearchInternalDateOn() throws Exception {
         SearchQuery q2 = new SearchQuery();
         Calendar cal = Calendar.getInstance();
         cal.setTime(new Date());
         q2.andCriteria(SearchQuery.internalDateOn(cal.getTime(), SearchQuery.DateResolution.Day));
-        Iterator<Long> it4 = index.search(null, mailbox, q2);
+        Iterator<Long> it4 = index.search(null, mailbox3, q2);
         assertEquals(1L, it4.next().longValue());
         assertFalse(it4.hasNext());
     }

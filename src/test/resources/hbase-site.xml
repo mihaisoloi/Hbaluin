@@ -22,20 +22,20 @@
  */
 -->
 <configuration>
-<!--
-    This config file must be on the application classpath and will tell our application
-    where to find the HBase cluster.     
--->
+    <!--
+        This config file must be on the application classpath and will tell our application
+        where to find the HBase cluster.
+    -->
     <property>
         <name>hbase.rootdir</name>
         <value>hdfs://localhost:9000/hbase</value>
     </property>
-	
+
     <property>
         <name>hbase.master.port</name>
         <value>60000</value>
     </property>
-	
+
     <property>
         <name>hbase.regionserver.info.port</name>
         <value>6030</value>
@@ -53,6 +53,13 @@
     <property>
         <name>hbase.zookeeper.property.tickTime</name>
         <value>1000</value>
+    </property>
+
+    <!-- COPROCESSOR -->
+
+    <property>
+        <name>hbase.coprocessor.region.classes</name>
+        <value>org.apache.james.mailbox.hbase.store.endpoint.RowFilteringEndpoint</value>
     </property>
 
 </configuration>

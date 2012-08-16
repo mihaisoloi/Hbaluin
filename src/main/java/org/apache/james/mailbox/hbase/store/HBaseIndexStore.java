@@ -1,19 +1,26 @@
 package org.apache.james.mailbox.hbase.store;
 
+import com.google.common.base.Preconditions;
 import com.google.common.collect.ArrayListMultimap;
+import com.google.common.collect.Sets;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.HColumnDescriptor;
 import org.apache.hadoop.hbase.HTableDescriptor;
 import org.apache.hadoop.hbase.client.*;
-import org.apache.hadoop.hbase.filter.*;
+import org.apache.hadoop.hbase.client.coprocessor.Batch;
+import org.apache.hadoop.hbase.filter.BinaryPrefixComparator;
+import org.apache.hadoop.hbase.filter.CompareFilter;
+import org.apache.hadoop.hbase.filter.RowFilter;
 import org.apache.hadoop.hbase.util.Bytes;
+import org.apache.james.mailbox.hbase.store.endpoint.RowFilteringProtocol;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.util.Iterator;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 import static org.apache.james.mailbox.hbase.store.HBaseNames.COLUMN_FAMILY;
 import static org.apache.james.mailbox.hbase.store.MessageFields.FLAGS_FIELD;
@@ -56,18 +63,24 @@ public class HBaseIndexStore {
         }
     }
 
-    ResultScanner retrieveMails(byte[] mailboxId) throws IOException {
-        Scan scan = new Scan();
-        scan.addFamily(COLUMN_FAMILY.name);
-        RowFilter filter = new RowFilter(CompareFilter.CompareOp.EQUAL,
-                new BinaryPrefixComparator(mailboxId));
-        scan.setFilter(filter);
-        return table.getScanner(scan);
+    Iterator<Long> retrieveMails(final byte[] mailboxId) throws Throwable {
+        Set<Long> uids = Sets.newHashSet();
+        Map<byte[], Set<Long>> results = table.coprocessorExec(RowFilteringProtocol.class, mailboxId,
+                Bytes.add(mailboxId, new byte[]{(byte) 0xFF}),
+                new Batch.Call<RowFilteringProtocol, Set<Long>>() {
+                    @Override
+                    public Set<Long> call(RowFilteringProtocol instance) throws IOException {
+                        return instance.filterByMailbox(mailboxId);
+                    }
+                });
+        for (Map.Entry<byte[], Set<Long>> entry : results.entrySet()) {
+            uids.addAll(entry.getValue());
+        }
+        return uids.iterator();
     }
 
     public ResultScanner retrieveMails(byte[] mailboxId, long messageId) throws IOException {
-        if (messageId == 0l)
-            return retrieveMails(mailboxId);
+        Preconditions.checkArgument(messageId != 0l);
         Scan scan = new Scan();
         scan.addColumn(COLUMN_FAMILY.name, Bytes.toBytes(messageId));
         RowFilter filter = new RowFilter(CompareFilter.CompareOp.EQUAL,
@@ -76,36 +89,25 @@ public class HBaseIndexStore {
         return table.getScanner(scan);
     }
 
-    public ResultScanner retrieveMails(byte[] mailboxId, ArrayListMultimap<MessageFields, String> queries) throws IOException {
-        if (queries.isEmpty())
+    public Iterator<Long> retrieveMails(final byte[] mailboxId,
+                                        final ArrayListMultimap<MessageFields, String> queries)
+            throws Throwable {
+        if (queries == null)
             return retrieveMails(mailboxId);
-        Scan scan = new Scan();
-        scan.addFamily(COLUMN_FAMILY.name);
-        FilterList list = new FilterList(FilterList.Operator.MUST_PASS_ONE);
-        for (Map.Entry<MessageFields, String> query : queries.entries()) {
-            String term = query.getValue().toUpperCase(Locale.ENGLISH);
-            byte[] field = new byte[]{query.getKey().id};
-            byte[] prefix = Bytes.add(mailboxId, field);
-            if (query.getKey() == MessageFields.FLAGS_FIELD) {
-                final FilterList flagList = new FilterList(FilterList.Operator.MUST_PASS_ALL);
-                RowFilter rowFilter = new RowFilter(CompareFilter.CompareOp.EQUAL,
-                        new BinaryComparator(prefix));
-                ValueFilter valueFilter = new ValueFilter(CompareFilter.CompareOp.EQUAL,
-                        new SubstringComparator(term));
-                flagList.addFilter(rowFilter);
-                flagList.addFilter(valueFilter);
-                list.addFilter(flagList);
-            } else {
-                RowFilter rowFilterPrefix = new RowFilter(CompareFilter.CompareOp.EQUAL,
-                        new BinaryPrefixComparator(Bytes.add(prefix, Bytes.toBytes(term))));
-                RowFilter rowFilterRegex = new RowFilter(CompareFilter.CompareOp.EQUAL,
-                        new RegexStringComparator(Bytes.toString(prefix) + ".*?" + term + ".*+"));
-                list.addFilter(rowFilterPrefix);
-                list.addFilter(rowFilterRegex);
-            }
+        Set<Long> uids = Sets.newHashSet();
+
+        Map<byte[], Set<Long>> results = table.coprocessorExec(RowFilteringProtocol.class, mailboxId,
+                Bytes.add(mailboxId, new byte[]{(byte) 0xFF}),
+                new Batch.Call<RowFilteringProtocol, Set<Long>>() {
+                    @Override
+                    public Set<Long> call(RowFilteringProtocol instance) throws IOException {
+                        return instance.filterByQueries(mailboxId, queries);
+                    }
+                });
+        for (Map.Entry<byte[], Set<Long>> entry : results.entrySet()) {
+            uids.addAll(entry.getValue());
         }
-        scan.setFilter(list);
-        return table.getScanner(scan);
+        return uids.iterator();
     }
 
     public void deleteMail(byte[] row, long messageId) throws IOException {
