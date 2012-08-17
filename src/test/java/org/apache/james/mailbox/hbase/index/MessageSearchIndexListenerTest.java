@@ -339,6 +339,7 @@ public class MessageSearchIndexListenerTest {
         assertFalse(it4.hasNext());
     }
 
+    @Ignore("unsupported operation")
     @Test
     public void testSearchInternalDateOn() throws Exception {
         SearchQuery q2 = new SearchQuery();
@@ -413,6 +414,7 @@ public class MessageSearchIndexListenerTest {
         assertFalse(it4.hasNext());
     }
 
+    @Ignore("unsupported operation")
     @Test
     public void testSortUid() throws Exception {
         SearchQuery q2 = new SearchQuery();

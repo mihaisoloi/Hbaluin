@@ -33,7 +33,8 @@ public class HBaseIndexStore {
     private HBaseIndexStore() {
     }
 
-    public static synchronized HBaseIndexStore getInstance(final Configuration configuration) throws IOException {
+    public static synchronized HBaseIndexStore getInstance(final Configuration configuration)
+            throws IOException {
         if (store == null) {
             store = new HBaseIndexStore();
             HBaseAdmin admin = new HBaseAdmin(configuration);
@@ -64,7 +65,6 @@ public class HBaseIndexStore {
     }
 
     Iterator<Long> retrieveMails(final byte[] mailboxId) throws Throwable {
-        Set<Long> uids = Sets.newHashSet();
         Map<byte[], Set<Long>> results = table.coprocessorExec(RowFilteringProtocol.class, mailboxId,
                 Bytes.add(mailboxId, new byte[]{(byte) 0xFF}),
                 new Batch.Call<RowFilteringProtocol, Set<Long>>() {
@@ -73,10 +73,8 @@ public class HBaseIndexStore {
                         return instance.filterByMailbox(mailboxId);
                     }
                 });
-        for (Map.Entry<byte[], Set<Long>> entry : results.entrySet()) {
-            uids.addAll(entry.getValue());
-        }
-        return uids.iterator();
+
+        return extractMessageIds(results);
     }
 
     public ResultScanner retrieveMails(byte[] mailboxId, long messageId) throws IOException {
@@ -92,9 +90,8 @@ public class HBaseIndexStore {
     public Iterator<Long> retrieveMails(final byte[] mailboxId,
                                         final ArrayListMultimap<MessageFields, String> queries)
             throws Throwable {
-        if (queries == null)
+        if (queries.isEmpty())
             return retrieveMails(mailboxId);
-        Set<Long> uids = Sets.newHashSet();
 
         Map<byte[], Set<Long>> results = table.coprocessorExec(RowFilteringProtocol.class, mailboxId,
                 Bytes.add(mailboxId, new byte[]{(byte) 0xFF}),
@@ -104,6 +101,12 @@ public class HBaseIndexStore {
                         return instance.filterByQueries(mailboxId, queries);
                     }
                 });
+
+        return extractMessageIds(results);
+    }
+
+    private Iterator<Long> extractMessageIds(Map<byte[], Set<Long>> results){
+        Set<Long> uids = Sets.newHashSet();
         for (Map.Entry<byte[], Set<Long>> entry : results.entrySet()) {
             uids.addAll(entry.getValue());
         }
