@@ -30,22 +30,25 @@ public class RowFilteringEndpoint extends BaseEndpointCoprocessor implements Row
             String term = query.getValue().toUpperCase(Locale.ENGLISH);
             byte[] field = new byte[]{query.getKey().id};
             byte[] prefix = Bytes.add(mailboxId, field);
-            if (query.getKey() == MessageFields.FLAGS_FIELD) {
-                final FilterList flagList = new FilterList(FilterList.Operator.MUST_PASS_ALL);
-                RowFilter rowFilter = new RowFilter(CompareFilter.CompareOp.EQUAL,
-                        new BinaryComparator(prefix));
-                ValueFilter valueFilter = new ValueFilter(CompareFilter.CompareOp.EQUAL,
-                        new SubstringComparator(term));
-                flagList.addFilter(rowFilter);
-                flagList.addFilter(valueFilter);
-                list.addFilter(flagList);
-            } else {
-                RowFilter rowFilterPrefix = new RowFilter(CompareFilter.CompareOp.EQUAL,
-                        new BinaryPrefixComparator(Bytes.add(prefix, Bytes.toBytes(term))));
-                RowFilter rowFilterRegex = new RowFilter(CompareFilter.CompareOp.EQUAL,
-                        new RegexStringComparator(Bytes.toString(prefix) + ".*?" + term + ".*+"));
-                list.addFilter(rowFilterPrefix);
-                list.addFilter(rowFilterRegex);
+            switch (query.getKey()){
+                case FLAGS_FIELD:
+                    final FilterList flagList = new FilterList(FilterList.Operator.MUST_PASS_ALL);
+                    RowFilter rowFilter = new RowFilter(CompareFilter.CompareOp.EQUAL,
+                            new BinaryComparator(prefix));
+                    ValueFilter valueFilter = new ValueFilter(CompareFilter.CompareOp.EQUAL,
+                            new SubstringComparator(term));
+                    flagList.addFilter(rowFilter);
+                    flagList.addFilter(valueFilter);
+                    list.addFilter(flagList);
+                    break;
+                default:
+                    RowFilter rowFilterPrefix = new RowFilter(CompareFilter.CompareOp.EQUAL,
+                            new BinaryPrefixComparator(Bytes.add(prefix, Bytes.toBytes(term))));
+                    RowFilter rowFilterRegex = new RowFilter(CompareFilter.CompareOp.EQUAL,
+                            new RegexStringComparator(Bytes.toString(prefix) + ".*?" + term + ".*+"));
+                    list.addFilter(rowFilterPrefix);
+                    list.addFilter(rowFilterRegex);
+                    break;
             }
         }
         scan.setFilter(list);
