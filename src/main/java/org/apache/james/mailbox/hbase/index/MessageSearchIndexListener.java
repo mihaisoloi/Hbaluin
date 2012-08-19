@@ -60,18 +60,6 @@ public class MessageSearchIndexListener extends ListeningMessageSearchIndex<UUID
 
     private final static Logger LOG = LoggerFactory.getLogger(MessageSearchIndexListener.class);
 
-    private final static Date MAX_DATE;
-    private final static Date MIN_DATE;
-
-    static {
-        Calendar cal = Calendar.getInstance();
-        cal.set(9999, 11, 31);
-        MAX_DATE = cal.getTime();
-
-        cal.set(0000, 0, 1);
-        MIN_DATE = cal.getTime();
-    }
-
     private final static String MEDIA_TYPE_TEXT = "text";
     private final static String MEDIA_TYPE_MESSAGE = "message";
     private final static String DEFAULT_ENCODING = "US-ASCII";
@@ -136,6 +124,10 @@ public class MessageSearchIndexListener extends ListeningMessageSearchIndex<UUID
     public static String rowToTerm(byte[] row) {
         byte[] term = Bytes.tail(row, row.length - 17);
         return Bytes.toString(term);
+    }
+
+    public static String row(byte[] row){
+        return rowToUUID(row)+rowToField(row).name()+rowToTerm(row);
     }
 
     @Override
@@ -218,7 +210,11 @@ public class MessageSearchIndexListener extends ListeningMessageSearchIndex<UUID
      */
     private Multimap<MessageFields, String> createQuery(SearchQuery.Criterion criterion, Mailbox<UUID> mailbox, Set<Long> recentUids) throws MailboxException {
         if (criterion instanceof SearchQuery.InternalDateCriterion)
-            return createInternalDateQuery((SearchQuery.InternalDateCriterion) criterion);
+            try {
+                return createInternalDateQuery((SearchQuery.InternalDateCriterion) criterion);
+            } catch (ParseException e) {
+                throw new MailboxException("Date not in valid format: ",e);
+            }
         else if (criterion instanceof SearchQuery.TextCriterion)
             return createTextQuery((SearchQuery.TextCriterion) criterion);
         else if (criterion instanceof SearchQuery.FlagCriterion) {
@@ -235,28 +231,21 @@ public class MessageSearchIndexListener extends ListeningMessageSearchIndex<UUID
         throw new UnsupportedSearchException();
     }
 
-    private Multimap<MessageFields, String> createInternalDateQuery(SearchQuery.InternalDateCriterion crit) throws UnsupportedSearchException {
+    private Multimap<MessageFields, String> createInternalDateQuery(SearchQuery.InternalDateCriterion crit) throws UnsupportedSearchException, ParseException {
         final Multimap<MessageFields, String> dateQuery = ArrayListMultimap.create();
         SearchQuery.DateOperator dop = crit.getOperator();
-        Date date = dop.getDate();
-        SearchQuery.DateResolution res = dop.getDateResultion();
-        DateTools.Resolution dRes = toResolution(res);
-        String value = DateTools.dateToString(date, dRes);
-        long time = 0l;
-        try {
-            time = DateTools.stringToTime(value);
-        } catch (ParseException e) {
-            //do nothing
-        }
-        System.out.println(value+"~~~~~~~~~"+date.getTime()+"~~~~~~~"+time);
+        DateTools.Resolution resolution = toResolution(dop.getDateResultion());
+        String time = resolution.name() +"|" + DateTools.stringToTime(DateTools.dateToString(dop.getDate(), resolution));
         switch(dop.getType()) {
             case ON:
-                dateQuery.put(SENT_DATE_FIELD,"0"+Long.toString(time));
+                dateQuery.put(SENT_DATE_FIELD,"0"+time);
                 break;
             case BEFORE:
-                dateQuery.put(SENT_DATE_FIELD,"1"+Long.toString(time));
+                dateQuery.put(SENT_DATE_FIELD,"1"+time);
+                break;
             case AFTER:
-                dateQuery.put(SENT_DATE_FIELD,"2"+Long.toString(time));
+                dateQuery.put(SENT_DATE_FIELD,"2"+time);
+                break;
             default:
                 throw new UnsupportedSearchException();
         }

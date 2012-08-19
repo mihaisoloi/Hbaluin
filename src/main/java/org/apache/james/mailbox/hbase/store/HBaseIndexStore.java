@@ -7,15 +7,13 @@ import org.apache.hadoop.hbase.HTableDescriptor;
 import org.apache.hadoop.hbase.client.*;
 import org.apache.hadoop.hbase.filter.*;
 import org.apache.hadoop.hbase.util.Bytes;
+import org.apache.lucene.document.DateTools;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.sql.Time;
-import java.util.Date;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
+import java.util.*;
+import java.util.concurrent.TimeUnit;
 
 import static org.apache.james.mailbox.hbase.store.HBaseNames.COLUMN_FAMILY;
 import static org.apache.james.mailbox.hbase.store.MessageFields.FLAGS_FIELD;
@@ -24,6 +22,18 @@ public class HBaseIndexStore {
     private static final Logger LOG = LoggerFactory.getLogger(HBaseIndexStore.class);
     private static HBaseIndexStore store;
     private static HTableInterface table;
+
+    private final static Date MAX_DATE;
+    private final static Date MIN_DATE;
+
+    static {
+        Calendar cal = Calendar.getInstance();
+        cal.set(9999, 11, 31);
+        MAX_DATE = cal.getTime();
+
+        cal.set(0000, 0, 1);
+        MIN_DATE = cal.getTime();
+    }
 
     private HBaseIndexStore() {
     }
@@ -86,9 +96,9 @@ public class HBaseIndexStore {
         FilterList list = new FilterList(FilterList.Operator.MUST_PASS_ONE);
         for (Map.Entry<MessageFields, String> query : queries.entries()) {
             String term = query.getValue().toUpperCase(Locale.ENGLISH);
-            byte[] field = new byte[]{query.getKey().id};
-            byte[] prefix = Bytes.add(mailboxId, field);
-            switch(query.getKey()){
+            MessageFields field = query.getKey();
+            byte[] prefix = Bytes.add(mailboxId, new byte[]{field.id});
+            switch (field) {
                 case FLAGS_FIELD:
                     final FilterList flagList = new FilterList(FilterList.Operator.MUST_PASS_ALL);
                     RowFilter rowFilter = new RowFilter(CompareFilter.CompareOp.EQUAL,
@@ -100,27 +110,23 @@ public class HBaseIndexStore {
                     list.addFilter(flagList);
                     break;
                 case SENT_DATE_FIELD:
-                    long time = Long.parseLong(term.substring(1));
-                    long day = 24 * 60 * 60 * 1000;
-                    long max = time + day;
-                    long now = new Date().getTime();
-                    assert(now > time);
-                    assert(now < max);
-                    System.out.println((Bytes.compareTo(Bytes.add(prefix,Bytes.toBytes(now)),Bytes.add(prefix,Bytes.toBytes(time)))>0));
-                    switch(term.charAt(0)){
-                        case 0://ON
-                            FilterList onTime = new FilterList(FilterList.Operator.MUST_PASS_ONE);
+                    int separatorIndex = term.indexOf("|");
+                    long time = Long.parseLong(term.substring(separatorIndex + 1));
+                    long max = getMaxResolution(term.substring(1, separatorIndex), time);
+                    switch (term.charAt(0)) {
+                        case '0'://ON
+                            FilterList onTime = new FilterList(FilterList.Operator.MUST_PASS_ALL);
                             RowFilter rowFilter1 = new RowFilter(CompareFilter.CompareOp.GREATER_OR_EQUAL,
-                                    new BinaryComparator(Bytes.add(prefix,Bytes.toBytes(time))));
+                                    new BinaryComparator(Bytes.add(prefix, Bytes.toBytes(Long.toString(time)))));
                             RowFilter rowFilter2 = new RowFilter(CompareFilter.CompareOp.LESS_OR_EQUAL,
-                                    new BinaryComparator(Bytes.add(prefix,Bytes.toBytes(max))));
+                                    new BinaryComparator(Bytes.add(prefix, Bytes.toBytes(Long.toString(max)))));
                             onTime.addFilter(rowFilter1);
                             onTime.addFilter(rowFilter2);
                             list.addFilter(onTime);
                             break;
-                        case 1://BEFORE
+                        case '1'://BEFORE
                             break;
-                        case 2://AFTER
+                        case '2'://AFTER
                             break;
                     }
                     break;
@@ -137,6 +143,32 @@ public class HBaseIndexStore {
         scan.setFilter(list);
         return table.getScanner(scan);
     }
+
+    public long getMaxResolution(String name, long time) {
+        long diff = 1l;
+        final Calendar max = Calendar.getInstance();
+        max.setTimeInMillis(time);
+        System.out.println(max.getTimeInMillis());
+        switch (DateTools.Resolution.valueOf(name)) {
+            case YEAR:
+                max.set(Calendar.YEAR, max.get(Calendar.YEAR) + 1);
+                return max.getTimeInMillis();
+            case MONTH:
+                max.set(Calendar.MONTH, max.get(Calendar.MONTH) + 1);
+                return max.getTimeInMillis();
+            case DAY:
+                return time + TimeUnit.DAYS.toMillis(diff);
+            case HOUR:
+                return time + TimeUnit.HOURS.toMillis(diff);
+            case MINUTE:
+                return time + TimeUnit.MINUTES.toMillis(diff);
+            case SECOND:
+                return time + TimeUnit.SECONDS.toMillis(diff);
+            default:
+                return time + diff;
+        }
+    }
+
 
     public void deleteMail(byte[] row, long messageId) throws IOException {
         Delete delete = new Delete(row);
