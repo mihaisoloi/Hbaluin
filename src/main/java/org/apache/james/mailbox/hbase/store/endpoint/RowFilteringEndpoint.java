@@ -73,7 +73,7 @@ public class RowFilteringEndpoint extends BaseEndpointCoprocessor implements Row
                             break;
                         case '2'://AFTER
                             lowerBound = max;
-                            upperBound = Long.MAX_VALUE;
+                            upperBound = MAX_DATE.getTime();
                             break;
                     }
                     timeList.addFilter(new RowFilter(CompareFilter.CompareOp.GREATER_OR_EQUAL,
