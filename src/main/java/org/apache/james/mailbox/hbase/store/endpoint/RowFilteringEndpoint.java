@@ -16,6 +16,9 @@ import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 
+import static org.apache.james.mailbox.hbase.index.MessageSearchIndexListener.row;
+import static org.apache.james.mailbox.hbase.index.MessageSearchIndexListener.rowToField;
+import static org.apache.james.mailbox.hbase.index.MessageSearchIndexListener.rowToTerm;
 import static org.apache.james.mailbox.hbase.store.HBaseNames.COLUMN_FAMILY;
 
 public class RowFilteringEndpoint extends BaseEndpointCoprocessor implements RowFilteringProtocol {
@@ -41,7 +44,7 @@ public class RowFilteringEndpoint extends BaseEndpointCoprocessor implements Row
             String term = query.getValue().toUpperCase(Locale.ENGLISH);
             byte[] field = new byte[]{query.getKey().id};
             byte[] prefix = Bytes.add(mailboxId, field);
-            switch (query.getKey()){
+            switch (query.getKey()) {
                 case FLAGS_FIELD:
                     final FilterList flagList = new FilterList(FilterList.Operator.MUST_PASS_ALL);
                     RowFilter rowFilter = new RowFilter(CompareFilter.CompareOp.EQUAL,
@@ -70,7 +73,7 @@ public class RowFilteringEndpoint extends BaseEndpointCoprocessor implements Row
                             break;
                         case '2'://AFTER
                             lowerBound = max;
-                            upperBound = MAX_DATE.getTime();
+                            upperBound = Long.MAX_VALUE;
                             break;
                     }
                     timeList.addFilter(new RowFilter(CompareFilter.CompareOp.GREATER_OR_EQUAL,
@@ -92,6 +95,40 @@ public class RowFilteringEndpoint extends BaseEndpointCoprocessor implements Row
         scan.setFilter(list);
 
         return extractIds(scan);
+    }
+
+    static class BinaryComparator extends org.apache.hadoop.hbase.filter.BinaryComparator {
+
+        public BinaryComparator() {
+        }
+
+        /**
+         * Constructor
+         *
+         * @param value value
+         */
+        public BinaryComparator(byte[] value) {
+            super(value);
+        }
+
+        @Override
+        public int compareTo(byte[] value, int offset, int length) {
+            int compare = Bytes.compareTo(this.getValue(), 0, this.getValue().length, value, offset, value.length);
+            if (rowToField(value) == MessageFields.SENT_DATE_FIELD
+                    && Long.parseLong(rowToTerm(this.getValue())) > Long.parseLong(rowToTerm(value))
+                    && compare<0) {
+                System.out.printf("%s %s %s : %s %n %s %b %n",
+                        DateTools.timeToString(Long.parseLong(rowToTerm(this.getValue())), DateTools.Resolution.MILLISECOND),
+                        compare > 0 ? ">" : "<",
+                        DateTools.timeToString(Long.parseLong(rowToTerm(value)), DateTools.Resolution.MILLISECOND),
+                        offset + "-" + length,
+                        rowToTerm(this.getValue()) + "~~~" + rowToTerm(value),
+                        Long.parseLong(rowToTerm(this.getValue())) > Long.parseLong(rowToTerm(value)));
+                System.out.println(row(this.getValue()));
+                System.out.println(row(value));
+            }
+            return compare;
+        }
     }
 
     public long getMaxResolution(String name, long time) {
