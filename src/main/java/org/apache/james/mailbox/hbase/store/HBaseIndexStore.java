@@ -7,6 +7,7 @@ import org.apache.hadoop.hbase.HTableDescriptor;
 import org.apache.hadoop.hbase.client.*;
 import org.apache.hadoop.hbase.filter.*;
 import org.apache.hadoop.hbase.util.Bytes;
+import org.apache.james.mailbox.hbase.index.MessageSearchIndexListener;
 import org.apache.lucene.document.DateTools;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -15,6 +16,8 @@ import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 
+import static org.apache.james.mailbox.hbase.index.MessageSearchIndexListener.rowToField;
+import static org.apache.james.mailbox.hbase.index.MessageSearchIndexListener.rowToTerm;
 import static org.apache.james.mailbox.hbase.store.HBaseNames.COLUMN_FAMILY;
 import static org.apache.james.mailbox.hbase.store.MessageFields.FLAGS_FIELD;
 
@@ -113,22 +116,28 @@ public class HBaseIndexStore {
                     int separatorIndex = term.indexOf("|");
                     long time = Long.parseLong(term.substring(separatorIndex + 1));
                     long max = getMaxResolution(term.substring(1, separatorIndex), time);
+
+                    FilterList timeList = new FilterList(FilterList.Operator.MUST_PASS_ALL);
+                    long lowerBound = 0, upperBound = 0;
                     switch (term.charAt(0)) {
                         case '0'://ON
-                            FilterList onTime = new FilterList(FilterList.Operator.MUST_PASS_ALL);
-                            RowFilter rowFilter1 = new RowFilter(CompareFilter.CompareOp.GREATER_OR_EQUAL,
-                                    new BinaryComparator(Bytes.add(prefix, Bytes.toBytes(Long.toString(time)))));
-                            RowFilter rowFilter2 = new RowFilter(CompareFilter.CompareOp.LESS_OR_EQUAL,
-                                    new BinaryComparator(Bytes.add(prefix, Bytes.toBytes(Long.toString(max)))));
-                            onTime.addFilter(rowFilter1);
-                            onTime.addFilter(rowFilter2);
-                            list.addFilter(onTime);
+                            lowerBound = time;
+                            upperBound = max;
                             break;
                         case '1'://BEFORE
+                            lowerBound = MIN_DATE.getTime();
+                            upperBound = time;
                             break;
                         case '2'://AFTER
+                            lowerBound = max;
+                            upperBound = MAX_DATE.getTime();
                             break;
                     }
+                    timeList.addFilter(new RowFilter(CompareFilter.CompareOp.GREATER_OR_EQUAL,
+                            new BinaryComparator(Bytes.add(prefix, Bytes.toBytes(Long.toString(lowerBound))))));
+                    timeList.addFilter(new RowFilter(CompareFilter.CompareOp.LESS_OR_EQUAL,
+                            new BinaryComparator(Bytes.add(prefix, Bytes.toBytes(Long.toString(upperBound))))));
+                    list.addFilter(timeList);
                     break;
                 default:
                     RowFilter rowFilterPrefix = new RowFilter(CompareFilter.CompareOp.EQUAL,
@@ -148,7 +157,6 @@ public class HBaseIndexStore {
         long diff = 1l;
         final Calendar max = Calendar.getInstance();
         max.setTimeInMillis(time);
-        System.out.println(max.getTimeInMillis());
         switch (DateTools.Resolution.valueOf(name)) {
             case YEAR:
                 max.set(Calendar.YEAR, max.get(Calendar.YEAR) + 1);
@@ -165,7 +173,7 @@ public class HBaseIndexStore {
             case SECOND:
                 return time + TimeUnit.SECONDS.toMillis(diff);
             default:
-                return time + diff;
+                return time;
         }
     }
 
