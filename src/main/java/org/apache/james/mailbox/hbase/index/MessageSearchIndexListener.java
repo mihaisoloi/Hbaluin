@@ -48,6 +48,7 @@ import org.slf4j.LoggerFactory;
 import javax.mail.Flags;
 import java.io.*;
 import java.nio.charset.Charset;
+import java.text.NumberFormat;
 import java.text.ParseException;
 import java.util.*;
 
@@ -421,8 +422,7 @@ public class MessageSearchIndexListener extends ListeningMessageSearchIndex<UUID
                         map.put(BASE_SUBJECT_FIELD, SearchUtil.getBaseSubject(headerValue));
                     }
                 }
-
-                map.put(SENT_DATE_FIELD, Long.toString(message.getInternalDate().getTime()));
+                map.put(SENT_DATE_FIELD, addLongPadding(message.getInternalDate().getTime()));
                 map.put(FIRST_FROM_MAILBOX_NAME_FIELD, firstFromMailbox);
                 map.put(FIRST_TO_MAILBOX_NAME_FIELD, firstToMailbox);
                 map.put(FIRST_CC_MAILBOX_NAME_FIELD, firstCcMailbox);
@@ -474,6 +474,19 @@ public class MessageSearchIndexListener extends ListeningMessageSearchIndex<UUID
         }
 
         return map;
+    }
+
+    /**
+     * adding padding because of full row comparison
+     * all longs have to have the same length in digits
+     *
+     * @param time
+     * @return
+     */
+    public static String addLongPadding(long time){
+        NumberFormat format= NumberFormat.getInstance(Locale.ENGLISH);
+        format.setMinimumIntegerDigits(19);
+        return format.format(time).replace(",","");
     }
 
     private String parseFlagsContent(Message<?> message) {

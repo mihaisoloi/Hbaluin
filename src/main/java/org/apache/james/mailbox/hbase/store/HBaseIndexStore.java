@@ -107,7 +107,6 @@ public class HBaseIndexStore {
         for (Map.Entry<byte[], Set<Long>> entry : results.entrySet()) {
             uids.addAll(entry.getValue());
         }
-        System.out.println(Arrays.toString(uids.toArray(new Long[uids.size()])));
         return uids.iterator();
     }
 
