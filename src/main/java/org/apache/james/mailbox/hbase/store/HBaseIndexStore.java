@@ -17,10 +17,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 
 import static org.apache.james.mailbox.hbase.store.HBaseNames.COLUMN_FAMILY;
 import static org.apache.james.mailbox.hbase.store.MessageFields.FLAGS_FIELD;
@@ -110,6 +107,7 @@ public class HBaseIndexStore {
         for (Map.Entry<byte[], Set<Long>> entry : results.entrySet()) {
             uids.addAll(entry.getValue());
         }
+        System.out.println(Arrays.toString(uids.toArray(new Long[uids.size()])));
         return uids.iterator();
     }
 

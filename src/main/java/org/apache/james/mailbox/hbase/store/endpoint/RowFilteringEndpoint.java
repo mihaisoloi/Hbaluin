@@ -10,16 +10,27 @@ import org.apache.hadoop.hbase.filter.*;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.james.mailbox.hbase.store.HBaseNames;
 import org.apache.james.mailbox.hbase.store.MessageFields;
+import org.apache.lucene.document.DateTools;
 
 import java.io.IOException;
-import java.util.Iterator;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
+import java.util.concurrent.TimeUnit;
 
 import static org.apache.james.mailbox.hbase.store.HBaseNames.COLUMN_FAMILY;
 
 public class RowFilteringEndpoint extends BaseEndpointCoprocessor implements RowFilteringProtocol {
+
+    private final static Date MAX_DATE;
+    private final static Date MIN_DATE;
+
+    static {
+        Calendar cal = Calendar.getInstance();
+        cal.set(9999, 11, 31);
+        MAX_DATE = cal.getTime();
+
+        cal.set(0000, 0, 1);
+        MIN_DATE = cal.getTime();
+    }
 
     @Override
     public Set<Long> filterByQueries(byte[] mailboxId, ArrayListMultimap<MessageFields, String> queries) throws IOException {
@@ -41,6 +52,33 @@ public class RowFilteringEndpoint extends BaseEndpointCoprocessor implements Row
                     flagList.addFilter(valueFilter);
                     list.addFilter(flagList);
                     break;
+                case SENT_DATE_FIELD:
+                    int separatorIndex = term.indexOf("|");
+                    long time = Long.parseLong(term.substring(separatorIndex + 1));
+                    long max = getMaxResolution(term.substring(1, separatorIndex), time);
+
+                    FilterList timeList = new FilterList(FilterList.Operator.MUST_PASS_ALL);
+                    long lowerBound = 0, upperBound = 0;
+                    switch (term.charAt(0)) {
+                        case '0'://ON
+                            lowerBound = time;
+                            upperBound = max;
+                            break;
+                        case '1'://BEFORE
+                            lowerBound = MIN_DATE.getTime();
+                            upperBound = time;
+                            break;
+                        case '2'://AFTER
+                            lowerBound = max;
+                            upperBound = MAX_DATE.getTime();
+                            break;
+                    }
+                    timeList.addFilter(new RowFilter(CompareFilter.CompareOp.GREATER_OR_EQUAL,
+                            new BinaryComparator(Bytes.add(prefix, Bytes.toBytes(Long.toString(lowerBound))))));
+                    timeList.addFilter(new RowFilter(CompareFilter.CompareOp.LESS_OR_EQUAL,
+                            new BinaryComparator(Bytes.add(prefix, Bytes.toBytes(Long.toString(upperBound))))));
+                    list.addFilter(timeList);
+                    break;
                 default:
                     RowFilter rowFilterPrefix = new RowFilter(CompareFilter.CompareOp.EQUAL,
                             new BinaryPrefixComparator(Bytes.add(prefix, Bytes.toBytes(term))));
@@ -54,6 +92,30 @@ public class RowFilteringEndpoint extends BaseEndpointCoprocessor implements Row
         scan.setFilter(list);
 
         return extractIds(scan);
+    }
+
+    public long getMaxResolution(String name, long time) {
+        long diff = 1l;
+        final Calendar max = Calendar.getInstance();
+        max.setTimeInMillis(time);
+        switch (DateTools.Resolution.valueOf(name)) {
+            case YEAR:
+                max.set(Calendar.YEAR, max.get(Calendar.YEAR) + 1);
+                return max.getTimeInMillis();
+            case MONTH:
+                max.set(Calendar.MONTH, max.get(Calendar.MONTH) + 1);
+                return max.getTimeInMillis();
+            case DAY:
+                return time + TimeUnit.DAYS.toMillis(diff);
+            case HOUR:
+                return time + TimeUnit.HOURS.toMillis(diff);
+            case MINUTE:
+                return time + TimeUnit.MINUTES.toMillis(diff);
+            case SECOND:
+                return time + TimeUnit.SECONDS.toMillis(diff);
+            default:
+                return time;
+        }
     }
 
     @Override

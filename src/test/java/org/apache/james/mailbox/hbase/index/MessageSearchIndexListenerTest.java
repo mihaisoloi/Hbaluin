@@ -5,6 +5,7 @@ import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.james.mailbox.hbase.store.HBaseIndexStore;
 import org.apache.james.mailbox.hbase.store.MessageBuilder;
+import org.apache.james.mailbox.hbase.store.MessageFields;
 import org.apache.james.mailbox.hbase.store.SimpleMailboxMembership;
 import org.apache.james.mailbox.model.MailboxACL;
 import org.apache.james.mailbox.model.SearchQuery;
@@ -118,7 +119,6 @@ public class MessageSearchIndexListenerTest {
             byte[] row = result.getRow();
             UUID mailboxUUID = rowToUUID(row);
             assertEquals(mailbox3.getMailboxId(),mailboxUUID);
-            System.out.println(mailboxUUID+"-"+ rowToField(row).name() + "/" + rowToTerm(row) );
         }
     }
 
@@ -314,7 +314,6 @@ public class MessageSearchIndexListenerTest {
         assertFalse(it4.hasNext());
     }
 
-    @Ignore("unsupported operation")
     @Test
     public void testSearchInternalDateBefore() throws Exception {
         SearchQuery q2 = new SearchQuery();
@@ -327,7 +326,6 @@ public class MessageSearchIndexListenerTest {
         assertFalse(it4.hasNext());
     }
 
-    @Ignore("unsupported operation")
     @Test
     public void testSearchInternalDateAfter() throws Exception {
         SearchQuery q2 = new SearchQuery();
@@ -339,14 +337,13 @@ public class MessageSearchIndexListenerTest {
         assertFalse(it4.hasNext());
     }
 
-    @Ignore("unsupported operation")
     @Test
     public void testSearchInternalDateOn() throws Exception {
         SearchQuery q2 = new SearchQuery();
         Calendar cal = Calendar.getInstance();
         cal.setTime(new Date());
         q2.andCriteria(SearchQuery.internalDateOn(cal.getTime(), SearchQuery.DateResolution.Day));
-        Iterator<Long> it4 = index.search(null, mailbox3, q2);
+        Iterator<Long> it4 = index.search(null, mailbox, q2);
         assertEquals(1L, it4.next().longValue());
         assertFalse(it4.hasNext());
     }

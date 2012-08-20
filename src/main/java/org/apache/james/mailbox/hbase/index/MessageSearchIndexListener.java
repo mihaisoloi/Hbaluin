@@ -37,11 +37,10 @@ import org.apache.james.mime4j.stream.MimeConfig;
 import org.apache.james.mime4j.util.MimeUtil;
 import org.apache.lucene.analysis.standard.UAX29URLEmailTokenizer;
 import org.apache.lucene.analysis.tokenattributes.CharTermAttribute;
-import org.apache.lucene.index.IndexReader;
-import org.apache.lucene.search.IndexSearcher;
-import org.apache.lucene.search.ScoreDoc;
-import org.apache.lucene.search.Sort;
-import org.apache.lucene.search.TopDocs;
+import org.apache.lucene.document.DateTools;
+import org.apache.lucene.index.Term;
+import org.apache.lucene.search.TermQuery;
+import org.apache.lucene.search.TermRangeQuery;
 import org.apache.lucene.util.Version;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -49,6 +48,7 @@ import org.slf4j.LoggerFactory;
 import javax.mail.Flags;
 import java.io.*;
 import java.nio.charset.Charset;
+import java.text.ParseException;
 import java.util.*;
 
 import static javax.mail.Flags.Flag;
@@ -59,18 +59,6 @@ import static org.apache.james.mailbox.hbase.store.MessageFields.*;
 public class MessageSearchIndexListener extends ListeningMessageSearchIndex<UUID> {
 
     private final static Logger LOG = LoggerFactory.getLogger(MessageSearchIndexListener.class);
-
-    private final static Date MAX_DATE;
-    private final static Date MIN_DATE;
-
-    static {
-        Calendar cal = Calendar.getInstance();
-        cal.set(9999, 11, 31);
-        MAX_DATE = cal.getTime();
-
-        cal.set(0000, 0, 1);
-        MIN_DATE = cal.getTime();
-    }
 
     private final static String MEDIA_TYPE_TEXT = "text";
     private final static String MEDIA_TYPE_MESSAGE = "message";
@@ -136,6 +124,10 @@ public class MessageSearchIndexListener extends ListeningMessageSearchIndex<UUID
     public static String rowToTerm(byte[] row) {
         byte[] term = Bytes.tail(row, row.length - 17);
         return Bytes.toString(term);
+    }
+
+    public static String row(byte[] row){
+        return rowToUUID(row)+rowToField(row).name()+rowToTerm(row);
     }
 
     @Override
@@ -212,7 +204,13 @@ public class MessageSearchIndexListener extends ListeningMessageSearchIndex<UUID
      * Return a query which is built based on the given {@link org.apache.james.mailbox.model.SearchQuery.Criterion}
      */
     private Multimap<MessageFields, String> createQuery(SearchQuery.Criterion criterion, Mailbox<UUID> mailbox, Set<Long> recentUids) throws MailboxException {
-        if (criterion instanceof SearchQuery.TextCriterion)
+        if (criterion instanceof SearchQuery.InternalDateCriterion)
+            try {
+                return createInternalDateQuery((SearchQuery.InternalDateCriterion) criterion);
+            } catch (ParseException e) {
+                throw new MailboxException("Date not in valid format: ",e);
+            }
+        else if (criterion instanceof SearchQuery.TextCriterion)
             return createTextQuery((SearchQuery.TextCriterion) criterion);
         else if (criterion instanceof SearchQuery.FlagCriterion) {
             SearchQuery.FlagCriterion crit = (SearchQuery.FlagCriterion) criterion;
@@ -226,6 +224,46 @@ public class MessageSearchIndexListener extends ListeningMessageSearchIndex<UUID
             return ArrayListMultimap.create();
 
         throw new UnsupportedSearchException();
+    }
+
+    private Multimap<MessageFields, String> createInternalDateQuery(SearchQuery.InternalDateCriterion crit) throws UnsupportedSearchException, ParseException {
+        final Multimap<MessageFields, String> dateQuery = ArrayListMultimap.create();
+        SearchQuery.DateOperator dop = crit.getOperator();
+        DateTools.Resolution resolution = toResolution(dop.getDateResultion());
+        String time = resolution.name() +"|" + DateTools.stringToTime(DateTools.dateToString(dop.getDate(), resolution));
+        switch(dop.getType()) {
+            case ON:
+                dateQuery.put(SENT_DATE_FIELD,"0"+time);
+                break;
+            case BEFORE:
+                dateQuery.put(SENT_DATE_FIELD,"1"+time);
+                break;
+            case AFTER:
+                dateQuery.put(SENT_DATE_FIELD,"2"+time);
+                break;
+            default:
+                throw new UnsupportedSearchException();
+        }
+        return dateQuery;
+    }
+
+    private DateTools.Resolution toResolution(SearchQuery.DateResolution res) {
+        switch (res) {
+            case Year:
+                return DateTools.Resolution.YEAR;
+            case Month:
+                return DateTools.Resolution.MONTH;
+            case Day:
+                return DateTools.Resolution.DAY;
+            case Hour:
+                return DateTools.Resolution.HOUR;
+            case Minute:
+                return DateTools.Resolution.MINUTE;
+            case Second:
+                return DateTools.Resolution.SECOND;
+            default:
+                return DateTools.Resolution.MILLISECOND;
+        }
     }
 
     private Multimap<MessageFields, String> createFlagQuery(String flag, boolean isSet, Mailbox<UUID> mailbox, Set<Long> recentUids) {
@@ -258,11 +296,7 @@ public class MessageSearchIndexListener extends ListeningMessageSearchIndex<UUID
             headerQuery.put(field, containedInHeader);
         } else if (op instanceof SearchQuery.ExistsOperator)
             headerQuery.put(field, "");
-        else /*if (op instanceof SearchQuery.DateOperator) {
-            SearchQuery.DateOperator dop = (SearchQuery.DateOperator) op;
-            String field = toSentDateField(dop.getDateResultion());
-            return createQuery(field, dop);
-        } else*/ if (op instanceof SearchQuery.AddressOperator) {
+        else if (op instanceof SearchQuery.AddressOperator) {
                 String address = ((SearchQuery.AddressOperator) op).getAddress().toUpperCase(Locale.ENGLISH);
                 tokenize(field, address, headerQuery);
             } else // Operator not supported
