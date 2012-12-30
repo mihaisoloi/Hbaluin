@@ -1,6 +1,7 @@
 package org.apache.james.mailbox.hbase.store.endpoint;
 
 import com.google.common.collect.ArrayListMultimap;
+import com.google.common.collect.Multimap;
 import com.google.common.collect.Sets;
 import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.client.ResultScanner;
@@ -36,7 +37,7 @@ public class RowFilteringEndpoint extends BaseEndpointCoprocessor implements Row
     }
 
     @Override
-    public Set<Long> filterByQueries(byte[] mailboxId, ArrayListMultimap<MessageFields, String> queries) throws IOException {
+    public Set<Long> filterByQueries(byte[] mailboxId, Multimap<MessageFields, String> queries) throws IOException {
         Scan scan = new Scan();
         scan.addFamily(COLUMN_FAMILY.name);
         FilterList list = new FilterList(FilterList.Operator.MUST_PASS_ONE);
@@ -82,6 +83,21 @@ public class RowFilteringEndpoint extends BaseEndpointCoprocessor implements Row
                             new BinaryComparator(Bytes.add(prefix, Bytes.toBytes(addLongPadding(upperBound))))));
                     list.addFilter(timeList);
                     break;
+                case UID_FIELD:
+                    int longSize = 19;
+                    long lowValue = Long.parseLong(term.substring(0, longSize));
+                    FilterList uidList = new FilterList(FilterList.Operator.MUST_PASS_ALL);
+                    if(term.length()>longSize){
+                        long highValue = Long.parseLong(term.substring(longSize));
+                        uidList.addFilter(new RowFilter(CompareFilter.CompareOp.GREATER_OR_EQUAL,
+                                new BinaryComparator(Bytes.add(prefix, Bytes.toBytes(addLongPadding(lowValue))))));
+                        uidList.addFilter(new RowFilter(CompareFilter.CompareOp.LESS_OR_EQUAL,
+                                new BinaryComparator(Bytes.add(prefix, Bytes.toBytes(addLongPadding(highValue))))));
+                    } else
+                        uidList.addFilter(new RowFilter(CompareFilter.CompareOp.EQUAL,
+                                new BinaryComparator(Bytes.add(prefix, Bytes.toBytes(addLongPadding(lowValue))))));
+                    list.addFilter(uidList);
+                    break;
                 default:
                     RowFilter rowFilterPrefix = new RowFilter(CompareFilter.CompareOp.EQUAL,
                             new BinaryPrefixComparator(Bytes.add(prefix, Bytes.toBytes(term))));
@@ -97,7 +113,7 @@ public class RowFilteringEndpoint extends BaseEndpointCoprocessor implements Row
         return extractIds(scan);
     }
 
-    public long getMaxResolution(String name, long time) {
+    private long getMaxResolution(String name, long time) {
         long diff = 1l;
         final Calendar max = Calendar.getInstance();
         max.setTimeInMillis(time);

@@ -16,7 +16,8 @@ public enum MessageFields {
     FIRST_TO_MAILBOX_NAME_FIELD((byte) 12),
     FIRST_CC_MAILBOX_NAME_FIELD((byte) 13),
     FIRST_FROM_MAILBOX_DISPLAY_FIELD((byte) 14),
-    FIRST_TO_MAILBOX_DISPLAY_FIELD((byte) 15);
+    FIRST_TO_MAILBOX_DISPLAY_FIELD((byte) 15),
+    UID_FIELD((byte) 16);
 
     public final byte id;
 

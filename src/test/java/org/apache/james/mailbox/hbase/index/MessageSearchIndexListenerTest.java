@@ -348,7 +348,6 @@ public class MessageSearchIndexListenerTest {
         assertFalse(it4.hasNext());
     }
 
-    @Ignore("unsupported operation")
     @Test
     public void testSearchUidMatch() throws Exception {
         SearchQuery q2 = new SearchQuery();
@@ -360,7 +359,6 @@ public class MessageSearchIndexListenerTest {
         assertFalse(it4.hasNext());
     }
 
-    @Ignore("unsupported operation")
     @Test
     public void testSearchUidRange() throws Exception {
         SearchQuery q2 = new SearchQuery();
@@ -710,7 +708,30 @@ public class MessageSearchIndexListenerTest {
     @Test
     public void testNot() throws Exception {
         SearchQuery q2 = new SearchQuery();
-        q2.andCriteria(SearchQuery.not(SearchQuery.uid(new SearchQuery.NumericRange[] { new SearchQuery.NumericRange(1)})));
+        q2.andCriteria(SearchQuery.not(SearchQuery.uid(new SearchQuery.NumericRange[]{new SearchQuery.NumericRange(2)})));
+        Iterator<Long> it4 = index.search(null, mailbox, q2);
+        assertEquals(1L, it4.next().longValue());
+        assertEquals(3L, it4.next().longValue());
+        assertFalse(it4.hasNext());
+    }
+
+    @Ignore("unsupported operation")
+    @Test
+    public void testAnd() throws Exception {
+        SearchQuery q2 = new SearchQuery();
+        q2.andCriteria(SearchQuery.and(SearchQuery.uid(new SearchQuery.NumericRange[]{new SearchQuery.NumericRange(1,2)}),
+                SearchQuery.uid(new SearchQuery.NumericRange[]{new SearchQuery.NumericRange(2,3)})));
+        Iterator<Long> it4 = index.search(null, mailbox, q2);
+        assertEquals(2L, it4.next().longValue());
+        assertFalse(it4.hasNext());
+    }
+
+    @Ignore("unsupported operation")
+    @Test
+    public void testOr() throws Exception {
+        SearchQuery q2 = new SearchQuery();
+        q2.andCriteria(SearchQuery.or(SearchQuery.uid(new SearchQuery.NumericRange[]{new SearchQuery.NumericRange(2)}),
+                SearchQuery.uid(new SearchQuery.NumericRange[]{new SearchQuery.NumericRange(3)})));
         Iterator<Long> it4 = index.search(null, mailbox, q2);
         assertEquals(2L, it4.next().longValue());
         assertEquals(3L, it4.next().longValue());

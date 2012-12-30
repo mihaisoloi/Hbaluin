@@ -2,6 +2,7 @@ package org.apache.james.mailbox.hbase.store;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ArrayListMultimap;
+import com.google.common.collect.Multimap;
 import com.google.common.collect.Sets;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.HColumnDescriptor;
@@ -85,7 +86,7 @@ public class HBaseIndexStore {
     }
 
     public Iterator<Long> retrieveMails(final byte[] mailboxId,
-                                        final ArrayListMultimap<MessageFields, String> queries)
+                                        final Multimap<MessageFields, String> queries)
             throws Throwable {
         if (queries.isEmpty())
             return retrieveMails(mailboxId);
